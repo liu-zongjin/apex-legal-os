@@ -1460,6 +1460,29 @@
       "compatibility": "Additive material analysis tasks reuse the current backend process, workflow parser, timeline checkpoints, file picker and artifact exports. Stable parent/child identifiers and atomic staging prevent duplicate children across retries and restarts. Existing JSON tasks and API contracts remain compatible; owned children are managed only through the coordinator. Task requests pin one configured model and bound upstream requests including retries using request-local policy; ordinary AI requests retain existing behavior. No new runtime dependencies. Restarted tasks await explicit resume. Case-scoped linked research projects are supported; independent unbound projects remain unsupported. Source hashes, artifact hashes, cancellation generations and optimistic controls protect results; ordinary status polling uses file metadata rather than hashing all inputs. Hidden pages stop polling. Generated analysis remains pending professional review and never writes case facts or sends messages. Runtime task tables are excluded from case-AI factual SQL retrieval. Model endpoint/account configuration changes invalidate continuation before any request; after analysis is fully checkpointed, export retry remains available even when the request budget is exhausted. Material analysis now selects deterministic passage IDs from pinned source text; the program restores exact original quotes with offsets. Legacy quote responses align whitespace only, never punctuation, amounts or negation. One validation correction per batch uses the same selected model and existing request budget; completed batches and the timeline survive retry. Failed batches publish no unverified analysis. Validation diagnostics contain indices/error codes; the latest model proposal per batch is kept privately beside the parsed cache, bounded to 64000 characters and excluded from downloadable artifact manifests. Material analysis presents records above the input and concise category views with collapsed verbatim evidence; all artifact/source endpoints remain compatible. New PDF parses exclude conservative margin furniture while retaining physical page markers and exclusion audit in the pinned parse cache; existing cached sources and finished artifacts are never rewritten. New analysis passages are bounded to 320 characters with exact offsets, and report evidence is deduplicated in a numbered appendix. Workflow pickers with one role assign directly using the unchanged apex:workflow-assign v1 payload; multi-role and archive menus remain unchanged. Second workbench review: new coordinator requests pin material_input_version=1 after computing the user request hash, preserving legacy idempotency keys and execution checkpoints. Pasted text is accepted alone or with files, added as immutable draft-* sources with nonphysical locators, included in audit exports, and exposed through the existing case/task-scoped source route. New material inputs do not generate a separate claim-check task; legacy jobs keep their prior semantics. Task lists add a bounded goal label without exposing request JSON. Atomic client selection, retry polling, disclosure preservation and explicit compose/result screens prevent stale reads and cross-case control completion from altering the current workspace. PDF filtering only excludes identifiable mastheads/page labels, never arbitrary repeated edge text. Shared context navigation is ordered consistently; a ResizeObserver aligns sticky content with actual context-bar height."
     },
     {
+      "id": "court-online-filing-draft",
+      "kind": "service",
+      "source": [
+        "backend/court_online_service.py",
+        "backend/automated_filing.py",
+        "frontend/automation-filing.html"
+      ],
+      "data_source": [
+        "GET /api/automated-filing/jobs/{job_id}/execution-status",
+        "POST /api/automated-filing/jobs/{job_id}/api-execute",
+        "automated_filing_jobs",
+        "automated_filing_events"
+      ],
+      "consumers": [
+        "frontend/automation-filing.html"
+      ],
+      "tests": [
+        "tests/test_automated_filing.py",
+        "tests/test_court_online_service.py"
+      ],
+      "compatibility": "Existing Token API routes and seven execution stages are retained. Initial civil draft creation reads the official court, available types, cause tree and current account profile without synced cases. Only read methods are accepted for the metadata routes. New job facts checkpoint the account and verified draft metadata. Uncertain creates reconcile the existing attempt instead of issuing another write. Older locally saved jobs can resume. A single saved account signature can generate a service confirmation. Final filing remains a lawyer action."
+    },
+    {
       "id": "local-business-profile",
       "kind": "service",
       "source": [

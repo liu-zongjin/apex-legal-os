@@ -32,6 +32,8 @@ from .platform_files import run as run_desktop, has_picker
 import time
 import urllib.parse
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Callable, Dict
 
@@ -742,6 +744,27 @@ def _validate_court_url(url: str) -> str:
     return parsed.geturl()
 
 
+_FILING_READ_ONLY_PATHS = {
+    "/yzw-zxfw-lafw/api/v3/pz/court/tree/all",
+    "/yzw-zxfw-lafw/api/v1/ay/tree/batch",
+    "/yzw-zxfw-sxfw/api/v1/user/info",
+}
+_FILING_COURT_DETAILS_PATH = re.compile(
+    r"/yzw-zxfw-lafw/api/v3/pz/(?:fyinfo/[0-9A-Za-z_-]+|fy/ajlx/[0-9A-Za-z_-]+/sp)"
+)
+_FILING_ACCOUNT: ContextVar[str] = ContextVar("filing_court_account", default="")
+
+
+@contextmanager
+def filing_account_scope(account_id: str):
+    """Keep a filing run on the same court account across all Token calls."""
+    context_token = _FILING_ACCOUNT.set(account_id)
+    try:
+        yield
+    finally:
+        _FILING_ACCOUNT.reset(context_token)
+
+
 async def automated_filing_api_call(method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
     """Call one approved filing-draft API using the active lawyer's Token.
 
@@ -767,13 +790,19 @@ async def automated_filing_api_call(method: str, path: str, payload: dict[str, A
         "/yzw-zxfw-ajfw/api/v1/saveSddzFile",
         "/yzw-zxfw-lafw/api/v3/ysla/ay/pz",
     }
+    metadata_read = clean_path in _FILING_READ_ONLY_PATHS or _FILING_COURT_DETAILS_PATH.fullmatch(clean_path)
+    draft_create = verb == "POST" and clean_path == "/yzw-zxfw-lafw/api/v3/layy"
+    if metadata_read and verb != "GET":
+        raise CourtOnlineError("法院、案由和账号查询仅支持读取", 422)
     allowed_upload_signature = clean_path == "/yzw-zxfw-ajfw/api/v1/file/upload/signature"
-    if not clean_path.startswith("/yzw-zxfw-lafw/api/v3/layy") and clean_path not in approved_auxiliary_paths:
+    if not clean_path.startswith("/yzw-zxfw-lafw/api/v3/layy") and clean_path not in approved_auxiliary_paths and not metadata_read:
         raise CourtOnlineError("不允许调用该一张网接口", 422)
     # 最终提交及所有认证相关接口永远不进入自动化白名单。
     if not allowed_upload_signature and any(token in clean_path.lower() for token in ("submit", "commit", "captcha", "sign", "verify", "auth")):
         raise CourtOnlineError("自动化立案不调用最终提交或认证接口", 422)
     secret = _read_secret()
+    if _FILING_ACCOUNT.get() and _FILING_ACCOUNT.get() != secret.get("_account_id"):
+        raise CourtOnlineError("一张网账号已切换，请切回开始本次立案的账号后继续", 409)
     token = str(secret.get("session_token") or "")
     if not token:
         raise CourtOnlineError("请先登录人民法院在线服务", 401)
@@ -832,13 +861,21 @@ async def automated_filing_api_call(method: str, path: str, payload: dict[str, A
         except ValueError:
             pass
         suffix = f"：{message[:180]}" if message else ""
-        raise CourtOnlineError(f"一张网接口响应异常（HTTP {response.status_code}）{suffix}") from exc
+        status = response.status_code if draft_create and response.status_code in {403, 422} else 502
+        raise CourtOnlineError(f"一张网接口响应异常（HTTP {response.status_code}）{suffix}", status) from exc
     try:
         data = response.json()
     except ValueError as exc:
         raise CourtOnlineError(f"一张网接口响应异常（HTTP {response.status_code}，未返回 JSON 数据）") from exc
     if isinstance(data, dict) and data.get("success") is False:
         raise CourtOnlineError(str(data.get("message") or "一张网接口拒绝了本次写入"), 422)
+    if (metadata_read or draft_create) and isinstance(data, dict):
+        code = str(data.get("code") or "")
+        if code in {"401", "403"}:
+            raise CourtOnlineError("一张网登录已失效或无权读取立案信息，请核对账号后重新登录", int(code))
+        if code and code != "200":
+            message = "一张网未确认创建草稿，请核对官网草稿列表" if draft_create else "一张网暂时未能返回立案信息，请稍后重试"
+            raise CourtOnlineError(message)
     return data.get("data", data) if isinstance(data, dict) else data
 
 

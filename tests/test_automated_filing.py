@@ -401,6 +401,179 @@ class FilingCertificateRegressionTests(unittest.TestCase):
             conn.commit()
             return cursor.lastrowid
 
+    def test_first_run_token_flow_finishes_with_no_synced_history(self):
+        from unittest.mock import AsyncMock, patch
+
+        samples = (
+            ("北京市海淀区人民法院", "申请执行人执行异议之诉"),
+            ("哈尔滨市南岗区人民法院", "买卖合同纠纷"),
+            ("杭州市西湖区人民法院", "建设工程施工合同纠纷"),
+            ("郑州市金水区人民法院", "申请执行人执行异议之诉"),
+            ("成都市武侯区人民法院", "买卖合同纠纷"),
+            ("西安市雁塔区人民法院", "建设工程施工合同纠纷"),
+            ("深圳市南山区人民法院", "申请执行人执行异议之诉"),
+        )
+        start = self.routes["/api/automated-filing/jobs/{job_id}/api-execute"]
+        status = self.routes["/api/automated-filing/jobs/{job_id}/execution-status"]
+        real_create_task = asyncio.create_task
+        root = filing.FILING_API_PATH
+        for index, (court_name, cause) in enumerate(samples, 1):
+            with self.subTest(court=court_name, cause=cause):
+                self.db_path = Path(self.temp.name) / f"first-filing-{index}.db"
+                filing._ensure_schema(self.get_db)
+                court_id, draft_id, cause_code = f"test-court-{index}", f"test-draft-{index}", f"test-cause-{index}"
+                plaintiff = {"name": "示例甲公司", "identity_type": "legal_entity", "document_number": "919999000000000002", "nationality": "中国", "address": "示例地址"}
+                defendant = {**plaintiff, "name": "示例乙公司", "document_number": "919999000000000003"}
+                facts = {
+                    "court_name": court_name, "cause": cause, "case_type": "民事一审",
+                    "representation_mode": "lawyer_agent", "case_name": "示例民事纠纷",
+                    "lawsuit_request": "请求履行合同", "claim_amount": "3000",
+                    "party_details": {"plaintiffs": [plaintiff], "defendants": [defendant]},
+                    "agents": [{"name": "示例律师", "document_number": "990000199001010050",
+                                "practice_number": "14400000000000000", "law_firm": "示例律师事务所"}],
+                }
+                material_specs = [
+                    ("complaint", "民事起诉状.pdf"),
+                    ("evidence", "买卖合同及对账单.pdf"),
+                    ("identity", "原告营业执照.pdf"),
+                    ("authority", "授权委托书.pdf"),
+                ]
+                materials = [
+                    {"category": category, "name": filename, "path": str(self.root / filename), "selected": True, "readable": True}
+                    for category, filename in material_specs
+                ]
+                job_id = self.create_job(materials, facts)
+                with self.get_db() as conn:
+                    self.assertIsNone(conn.execute("SELECT 1 FROM sqlite_master WHERE name='case_manager_court_online_layy'").fetchone())
+
+                detail = {"layy": {"id": draft_id, "fyid": court_id}, "dsrs": [], "dlrs": [], "sscls": []}
+                for category, _ in material_specs + [("service_address", "")]:
+                    detail["sscls"].append({"id": category, "clmc": filing.MATERIAL_SLOT_NAMES[category],
+                                            "cllx": f"type-{category}", "wjs": []})
+                reads = {
+                    f"{root}/pz/court/tree/all": [{"text": "全国", "children": [{"text": court_name, "value": court_id}]}],
+                    f"{root}/pz/fyinfo/{court_id}": {"id": court_id, "fyMc": court_name, "sfId": f"test-province-{index}", "cs": "示例市"},
+                    f"{root}/pz/fy/ajlx/{court_id}/sp": [{"value": filing.OFFICIAL_CAUSE_GROUP_CIVIL_FIRST_INSTANCE}],
+                    "/yzw-zxfw-sxfw/api/v1/user/info": {"cId": "test-current-user", "cJs": "2", "cDsrlx": filing.NATURAL_PERSON_CODE},
+                    "/yzw-zxfw-lafw/api/v1/ay/tree/batch": {"data": {"0300": [{"name": "民事案由", "children": [{"name": cause, "id": cause_code}]}]}},
+                    f"{root}/layy": [],
+                    f"{root}/layy/layyxq/{draft_id}/0": detail,
+                }
+                calls, tasks = [], []
+
+                async def api(method, path, payload=None):
+                    calls.append((method, path))
+                    if method == "GET" and path == f"{root}/layy/ocr":
+                        for role, party in (("plaintiffs", plaintiff), ("defendants", defendant)):
+                            detail["dsrs"].append({**filing._party_payload(party, role, detail["layy"]), "id": role})
+                        return {}
+                    if method == "GET":
+                        return reads[path]
+                    if method == "POST" and path == f"{root}/layy":
+                        self.assertEqual(payload["fyid"], court_id)
+                        self.assertEqual(payload["sfid"], f"test-province-{index}")
+                        self.assertEqual(payload["sqrsf"], "11800010-2")
+                        self.assertEqual(payload["sqrlx"], "11800011-1")
+                        self.assertNotIn("sqrid", payload)
+                        return draft_id
+                    if method == "PATCH" and path == f"{root}/layy":
+                        self.assertEqual(payload["laayMz"], cause_code)
+                        self.assertEqual(payload["laay"], cause)
+                        detail["layy"].update(payload)
+                        return {}
+                    if method == "PATCH" and path == f"{root}/layy/dsr":
+                        next(p for p in detail["dsrs"] if p["id"] == payload["id"]).update(payload)
+                        return {}
+                    if method == "POST" and path == f"{root}/layy/dlr":
+                        detail["dlrs"].append({**payload, "id": "test-agent"})
+                        return {}
+                    if path == "/yzw-zxfw-yhfw/api/v1/grxx/yjsd/list":
+                        return [{"bh": "test-address"}]
+                    if path == "/yzw-zxfw-ajfw/api/v1/dzqm/dzqmList":
+                        return {"records": [{"version": "synthetic", "osspath": "test-current-signature"}]}
+                    if method == "POST" and path in {f"{root}/layy/ssclfj", f"{root}/layy/ssclfj/upload"}:
+                        if path.endswith("/upload"):
+                            self.assertEqual(payload["qmPath"], "test-current-signature")
+                        next(slot for slot in detail["sscls"] if slot["id"] == payload["ssclid"])["wjs"].append(payload)
+                        return {}
+                    self.fail(f"Unexpected official operation {method} {path}")
+
+                def capture_task(coroutine):
+                    task = real_create_task(coroutine)
+                    tasks.append(task)
+                    return task
+
+                async def run():
+                    self.assertTrue((await start(job_id))["started"])
+                    await asyncio.wait_for(tasks[-1], timeout=5)
+
+                with patch.object(filing, "automated_filing_api_call", side_effect=api), \
+                        patch.object(filing, "_active_account_id", return_value="test-account"), \
+                        patch.object(filing, "automated_filing_upload_file", new=AsyncMock(return_value="test-object")), \
+                        patch.object(filing.httpx, "AsyncClient") as client, \
+                        patch.object(filing.asyncio, "create_task", side_effect=capture_task):
+                    client.return_value.__aenter__.return_value.post = AsyncMock()
+                    asyncio.run(run())
+
+                result = status(job_id)
+                self.assertEqual(result["phase"], "complete", result["steps"])
+                self.assertEqual(result["completed_count"], 7)
+                self.assertEqual(result["draft_id"], draft_id)
+                self.assertEqual(calls.count(("POST", f"{root}/layy")), 1)
+                self.assertEqual(calls.count(("GET", "/yzw-zxfw-lafw/api/v1/ay/tree/batch")), 1)
+
+    def test_unknown_create_result_does_not_repost_or_bind_preexisting_blank(self):
+        from fastapi import HTTPException
+        from unittest.mock import AsyncMock, patch
+
+        name = "示例市示例区人民法院"
+        case_type = filing.OFFICIAL_CAUSE_GROUP_CIVIL_FIRST_INSTANCE
+        drafts = [{"id": "test-old-blank", "fyid": "example", "fymc": name, "ajlx": case_type, "zt": "11800007-100"}]
+        writes = []
+
+        async def api(method, path, payload=None):
+            if method == "POST":
+                writes.append(payload)
+                raise HTTPException(status_code=504, detail="timeout")
+            if path.endswith("/user/info"):
+                return {"cId": "test-person", "cJs": "2", "cDsrlx": filing.NATURAL_PERSON_CODE}
+            return list(drafts)
+
+        job_id = self.create_job([], {"court_name": name, "cause": "买卖合同纠纷", "representation_mode": "self"})
+        create = self.routes["/api/automated-filing/jobs/{job_id}/api-execute/create-draft"]
+        with patch.object(filing, "automated_filing_api_call", side_effect=api), \
+                patch.object(filing, "_active_account_id", return_value="test-account"), \
+                patch.object(filing, "_official_filing_court", new=AsyncMock(return_value={"fyid": "example", "sfid": "region"})), \
+                patch.object(filing, "_official_civil_cause", new=AsyncMock(return_value=("买卖合同纠纷", "test-cause"))):
+            with self.assertRaises(HTTPException) as timed_out:
+                asyncio.run(create(job_id))
+            self.assertEqual(timed_out.exception.status_code, 504)
+            with self.assertRaises(HTTPException) as unknown:
+                asyncio.run(create(job_id))
+            self.assertEqual(unknown.exception.status_code, 409)
+            drafts.append({**drafts[0], "id": "test-new-blank"})
+            result = asyncio.run(create(job_id))
+            self.assertEqual(result["facts"]["api_draft_id"], "test-new-blank")
+            self.assertNotIn("api_draft_attempt", result["facts"])
+            self.assertEqual(len(writes), 1)
+            with patch.object(filing, "_active_account_id", return_value="other-account"):
+                with self.assertRaises(HTTPException) as wrong_account:
+                    asyncio.run(create(job_id))
+            self.assertEqual(wrong_account.exception.status_code, 409)
+
+    def test_official_lookup_rejects_ambiguous_names(self):
+        from fastapi import HTTPException
+        from unittest.mock import AsyncMock, patch
+
+        tree = [{"text": "示例区人民法院", "value": "a"}, {"text": "示例区人民法院", "value": "b"}]
+        cause_tree = {"data": {"0300": [{"name": "示例纠纷", "id": "a"}, {"name": "示例纠纷", "id": "b"}]}}
+        api = AsyncMock(side_effect=[tree, cause_tree])
+        with patch.object(filing, "automated_filing_api_call", api):
+            with self.assertRaisesRegex(HTTPException, "匹配到多家法院"):
+                asyncio.run(filing._official_filing_court("示例区人民法院"))
+            with self.assertRaisesRegex(HTTPException, "存在同名选项"):
+                asyncio.run(filing._official_civil_cause("示例纠纷"))
+
     def test_ocr_fast_path_patches_proven_cards_without_creating_duplicates(self):
         from unittest.mock import AsyncMock, patch
         party = {"name": "示例街道菉塘村集体经济组织", "identity_type": "legal_entity",

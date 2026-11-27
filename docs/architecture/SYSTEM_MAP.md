@@ -1,5 +1,21 @@
 # APEX System Map
 
+## First civil filing through Court Online Service (2026-11-27)
+
+The existing Token API workflow resolves court identity and province/city from
+the official court directory, verifies that the court supports civil first
+instance, and uses the official civil cause tree and current account profile.
+Draft creation uses the verified province as `sfid` and the current Token for
+applicant identity. It no longer constructs the create payload from previously
+synced applications. Court and cause selections must resolve to a unique
+official code. The draft task checkpoints its resolved metadata and pre-write
+blank-draft IDs in existing job data. A retry after an uncertain write checks
+for a single new candidate and never reissues the create request. An interrupted
+legacy task can still resume its existing draft. Draft work runs under the
+same court account and stops before final submission. The service confirmation
+uses the previously designated signature or the account's sole saved signature.
+
+
 ## Multi-source AI ask (2026-11-27)
 
 One ask turn may now draw on knowledge articles, Fada Wang entries and local

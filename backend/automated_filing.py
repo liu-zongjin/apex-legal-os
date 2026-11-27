@@ -24,7 +24,9 @@ from typing import Any, Callable
 import httpx
 from fastapi import File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
-from .court_online_service import automated_filing_api_call, automated_filing_upload_file
+from .court_online_service import (
+    _active_account_id, automated_filing_api_call, automated_filing_upload_file, filing_account_scope,
+)
 from .court_filing_ocr import _proven_organisation_ocr_variant
 
 
@@ -1651,94 +1653,112 @@ def _service_address_is_attached(slots: list[dict[str, Any]]) -> bool:
 
 
 def _service_address_signature(signatures: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Use the lawyer-designated saved signing record, never an inferred latest record."""
-    return next((item for item in signatures if _norm(item.get("version")) == SERVICE_ADDRESS_SIGNATURE_VERSION
-                 and _norm(item.get("qssj")) == SERVICE_ADDRESS_SIGNATURE_TIME and _norm(item.get("osspath"))), None)
+    """Prefer the previously designated signature. Otherwise require one distinct saved choice."""
+    available = {_norm(item.get("osspath")): item for item in signatures if _norm(item.get("osspath"))}
+    designated = next((item for item in available.values()
+                       if _norm(item.get("version")) == SERVICE_ADDRESS_SIGNATURE_VERSION
+                       and _norm(item.get("qssj")) == SERVICE_ADDRESS_SIGNATURE_TIME), None)
+    return designated or (next(iter(available.values())) if len(available) == 1 else None)
 
 
-def _cached_court_draft_template(conn: Any, court_name: str, cause: str) -> dict[str, str]:
-    """Combine a court-specific filing template with a verified cause code.
+FILING_API_PATH = "/yzw-zxfw-lafw/api/v3"
+CIVIL_CAUSE_TREE_GROUP = "0300"
+CIVIL_CASE_CATEGORY = "sp"
 
-    Court identity, filing type and applicant settings are court-specific, but
-    the online filing cause code is a national dictionary value.  A court may
-    therefore have a known-good draft template without having a historical
-    filing for every possible cause.  In that case reuse a code that was
-    already observed in another court's official response.
-    """
-    try:
-        search = _normalise_court_name(court_name)
-        rows = conn.execute(
-            """SELECT court_name,cause,cause_code,detail_json FROM case_manager_court_online_layy
-               WHERE detail_json NOT IN ('','{}')
-               ORDER BY CASE WHEN court_name=? THEN 0 WHEN ? NOT IN ('','') AND court_name LIKE ? THEN 1 ELSE 2 END,
-                        datetime(updated_at) DESC,id DESC LIMIT 80""",
-            (_norm(court_name), search, "%" + search + "%"),
-        ).fetchall()
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail="未找到当前法院的已验证立案模板，暂不能自动创建官网草稿") from exc
-    court_template: dict[str, str] | None = None
+
+def _filing_tree_nodes(nodes: Any):
+    if isinstance(nodes, list):
+        for node in nodes:
+            if isinstance(node, dict):
+                yield node
+                yield from _filing_tree_nodes(node.get("children"))
+
+
+async def _official_civil_cause(cause: str) -> tuple[str, str]:
+    result = await automated_filing_api_call(
+        "GET", "/yzw-zxfw-lafw/api/v1/ay/tree/batch", {"lbs": CIVIL_CAUSE_TREE_GROUP},
+    )
+    data = result.get("data", result) if isinstance(result, dict) else {}
+    roots = data.get(CIVIL_CAUSE_TREE_GROUP) if isinstance(data, dict) else None
+    if not isinstance(roots, list) or not roots:
+        raise HTTPException(status_code=502, detail="一张网未返回民事案由目录，请稍后重试")
     requested = _normalise_cause(cause)
-    for row in rows:
-        payload = _loads(row["detail_json"], {})
-        details = payload.get("layyxq") if isinstance(payload, dict) else {}
-        layy = details.get("layy") if isinstance(details, dict) else payload.get("layy", {}) if isinstance(payload, dict) else {}
-        if not isinstance(layy, dict) or (_norm(layy.get("fymc")) != _norm(court_name)
-                                          and _normalise_court_name(layy.get("fymc")) != search):
+    matches = {}
+    for node in _filing_tree_nodes(roots):
+        label = _norm(node.get("name"))
+        code = _norm(node.get("id"))
+        if (_normalise_cause(label) == requested and re.fullmatch(r"[0-9A-Za-z_-]+", code)
+                and _norm(node.get("disabled")).lower() not in {"1", "true"}):
+            matches[code] = label
+    if len(matches) != 1:
+        detail = "存在同名选项" if matches else "未查询到该案由"
+        raise HTTPException(status_code=422, detail=f"一张网民事案由目录中「{requested}」{detail}，请核对案由全称后继续")
+    code, label = next(iter(matches.items()))
+    return label, code
+
+
+async def _official_filing_court(court_name: str) -> dict[str, str]:
+    tree = await automated_filing_api_call("GET", f"{FILING_API_PATH}/pz/court/tree/all")
+    if not isinstance(tree, list) or not tree:
+        raise HTTPException(status_code=502, detail="一张网未返回受诉法院目录，请稍后重试")
+    exact, abbreviated = set(), set()
+    requested = _normalise_court_name(court_name)
+    for node in _filing_tree_nodes(tree):
+        label = _norm(node.get("text"))
+        code = _norm(node.get("value"))
+        if not re.fullmatch(r"[0-9A-Za-z_-]+", code):
             continue
-        item = {
-            "court_id": _norm(layy.get("fyid") or layy.get("fyId")),
-            "case_type": _norm(layy.get("ajlx")), "case_category": _norm(layy.get("ajlb")),
-            "applicant_identity": _norm(layy.get("sqrsf")), "filing_method": _norm(layy.get("lafs")),
-            "online_filing_flag": _norm(layy.get("sfysla")),
-            "applicant_id": _norm(layy.get("sqrid")),
-            # The active court account is a natural person.  This is the same
-            # verified code already used for natural-person court parties.
-            "applicant_type": NATURAL_PERSON_CODE,
-            "cause_code": _norm(layy.get("laayMz")) or _norm(row["cause_code"]),
-            "cause": _norm(layy.get("laay")) or _norm(row["cause"]),
-        }
-        if not all((item["court_id"], item["case_type"], item["case_category"], item["applicant_identity"], item["applicant_id"])):
-            continue
-        if court_template is None:
-            court_template = item
-        cached = _normalise_cause(item["cause"])
-        if requested == cached and item["cause_code"]:
-            # Use the name exactly as it was verified on the court website,
-            # rather than the longer wording that may appear in a complaint.
-            item["cause"] = item["cause"] or requested
-            return item
-    if court_template:
-        # ``laayMz`` is a national cause dictionary code.  Only reuse a value
-        # present in a fully saved official detail response, never from an
-        # unverified label or an AI suggestion.
-        global_rows = conn.execute(
-            """SELECT cause,cause_code,detail_json FROM case_manager_court_online_layy
-               WHERE detail_json NOT IN ('','{}') ORDER BY datetime(updated_at) DESC,id DESC LIMIT 500"""
-        ).fetchall()
-        for row in global_rows:
-            payload = _loads(row["detail_json"], {})
-            details = payload.get("layyxq") if isinstance(payload, dict) else {}
-            layy = details.get("layy") if isinstance(details, dict) else payload.get("layy", {}) if isinstance(payload, dict) else {}
-            if not isinstance(layy, dict):
-                continue
-            cached_cause = _norm(layy.get("laay")) or _norm(row["cause"])
-            cause_code = _norm(layy.get("laayMz")) or _norm(row["cause_code"])
-            if _normalise_cause(cached_cause) == requested and cause_code:
-                court_template.update({"cause": cached_cause, "cause_code": cause_code})
-                return court_template
-    # The official cause dictionary is a national taxonomy so its codes are
-    # valid for every court.  When the draft template is otherwise available but
-    # this particular cause has never been read back, fill only the cause code
-    # from the cached dictionary instead of forcing a manual selection.
-    if court_template:
-        for extra in _all_cause_candidates(conn, court_name):
-            if _normalise_cause(extra["label"]) == requested and extra["code"]:
-                court_template.update({"cause": extra["label"], "cause_code": extra["code"]})
-                return court_template
-    raise HTTPException(status_code=422, detail=f"未在本机已验证记录中找到“{court_name}”对应“{_normalise_cause(cause)}”的案由代码，请先在官网完成一次该案由选择后重试")
+        if label == court_name:
+            exact.add(code)
+        elif requested and _normalise_court_name(label) == requested:
+            abbreviated.add(code)
+    matches = exact or abbreviated
+    if len(matches) != 1:
+        detail = "匹配到多家法院" if matches else "未找到该法院"
+        raise HTTPException(status_code=422, detail=f"一张网受诉法院目录中「{court_name}」{detail}，请核对法院全称后继续")
+    court_id = next(iter(matches))
+    court, case_types = await asyncio.gather(
+        automated_filing_api_call("GET", f"{FILING_API_PATH}/pz/fyinfo/{court_id}"),
+        automated_filing_api_call("GET", f"{FILING_API_PATH}/pz/fy/ajlx/{court_id}/{CIVIL_CASE_CATEGORY}"),
+    )
+    if (not isinstance(court, dict) or _norm(court.get("id")) != court_id
+            or _normalise_court_name(court.get("fyMc")) != requested or not _norm(court.get("sfId"))):
+        raise HTTPException(status_code=502, detail=f"一张网未返回「{court_name}」的完整法院资料，请稍后重试")
+    if not isinstance(case_types, list):
+        raise HTTPException(status_code=502, detail=f"一张网未返回「{court_name}」的可选案件类型，请稍后重试")
+    if not any(isinstance(item, dict) and _norm(item.get("value")) == OFFICIAL_CAUSE_GROUP_CIVIL_FIRST_INSTANCE
+               for item in case_types):
+        raise HTTPException(status_code=422, detail=f"一张网未为「{court_name}」开放民事一审网上立案，请核对法院和案件类型")
+    return {"fyid": court_id, "sfid": _norm(court["sfId"]), "citymc": _norm(court.get("cs"))}
+
+
+def _official_filing_applicant(facts: dict[str, Any], profile: Any) -> dict[str, str]:
+    if not isinstance(profile, dict) or not _norm(profile.get("cId")) or not _norm(profile.get("cJs")) or not _norm(profile.get("cDsrlx")):
+        raise HTTPException(status_code=422, detail="一张网未返回完整的申请人资料，请核对当前账号身份并重新登录")
+    mode = _norm(facts.get("representation_mode"))
+    role = _norm(facts.get("applicant_role"))
+    if mode in {"", "unknown"}:
+        if role in {"本人申请", "当事人本人", "本人"}:
+            mode = "self"
+        elif role in {"代理人", "为他人或公司等组织申请"}:
+            mode = "agent"
+        else:
+            raise HTTPException(status_code=422, detail="请在提交前确认页核对申请人身份")
+    is_proxy = mode in {"agent", "lawyer_agent", "employee_agent", "legal_representative"}
+    if is_proxy and _norm(profile["cDsrlx"]) != NATURAL_PERSON_CODE:
+        raise HTTPException(status_code=422, detail="当前一张网账号类型仅支持本人申请，请核对账号和申请人身份")
+    # These are the account-role rules of the official filing form. The
+    # server binds the applicant from the Token. sfid is a province code.
+    applicant_type = "11800011-1"
+    if _norm(profile["cJs"]) == "1":
+        applicant_type = "11800011-3" if is_proxy else "11800011-2"
+    return {"sqrsf": "11800010-2" if is_proxy else "11800010-1", "sqrlx": applicant_type}
+
 
 
 def _draft_id_from_create_result(value: Any) -> str:
+    if isinstance(value, str) and re.fullmatch(r"[0-9A-Za-z_-]{8,128}", value.strip()):
+        return value.strip()
     if not isinstance(value, dict):
         return ""
     for key in ("id", "layyid", "layyId"):
@@ -1746,22 +1766,14 @@ def _draft_id_from_create_result(value: Any) -> str:
             return _norm(value.get(key))
     for key in ("layy", "data", "result"):
         nested = value.get(key)
-        if isinstance(nested, dict):
-            draft_id = _draft_id_from_create_result(nested)
-            if draft_id:
-                return draft_id
+        draft_id = _draft_id_from_create_result(nested)
+        if draft_id:
+            return draft_id
     return ""
 
 
-def _recent_blank_draft_id(value: Any, *, court_name: str) -> str:
-    """Return one unambiguously fresh, empty draft for recovery only.
-
-    Some court nodes create the draft successfully but return a response body
-    without its identifier.  The list API is then the only safe way to obtain
-    that identifier.  We deliberately accept only a single newest draft for
-    the same court that has not received any case/cause data, so a retry never
-    creates a second official draft.
-    """
+def _blank_draft_ids(value: Any, *, court_name: str, court_id: str = "") -> set[str]:
+    """Read only unsubmitted, blank drafts for the selected court."""
     rows = value if isinstance(value, list) else []
     if isinstance(value, dict):
         for key in ("rows", "records", "list", "data", "result"):
@@ -1775,19 +1787,24 @@ def _recent_blank_draft_id(value: Any, *, court_name: str) -> str:
                     if isinstance(nested, list):
                         rows = nested
                         break
-    matches: list[str] = []
+    matches: set[str] = set()
     for row in rows[:20]:
-        if not isinstance(row, dict) or (_norm(row.get("fymc")) != _norm(court_name)
-                                          and _normalise_court_name(row.get("fymc")) != _normalise_court_name(court_name)):
+        if not isinstance(row, dict):
+            continue
+        if court_id:
+            if (_norm(row.get("fyid")) != court_id or _norm(row.get("zt")) != "11800007-100"
+                    or _norm(row.get("ajlx")) != OFFICIAL_CAUSE_GROUP_CIVIL_FIRST_INSTANCE):
+                continue
+        elif _normalise_court_name(row.get("fymc")) != _normalise_court_name(court_name):
             continue
         # A newly created draft has not yet received the reviewed case name or
         # cause.  Do not touch drafts that already contain either one.
         if _norm(row.get("ajmc")) or _norm(row.get("laay")) or _norm(row.get("laayMz")):
             continue
         draft_id = _norm(row.get("id") or row.get("layyid") or row.get("layyId"))
-        if draft_id and draft_id not in matches:
-            matches.append(draft_id)
-    return matches[0] if len(matches) == 1 else ""
+        if draft_id:
+            matches.add(draft_id)
+    return matches
 
 
 def register_automated_filing_routes(
@@ -2440,7 +2457,8 @@ def register_automated_filing_routes(
             row = conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="自动化立案任务不存在")
-            merged_facts = _loads(row["facts_json"], {}); merged_facts.update({key: value for key, value in facts.items() if isinstance(key, str)})
+            merged_facts = _loads(row["facts_json"], {})
+            merged_facts.update({key: value for key, value in facts.items() if isinstance(key, str) and not key.startswith("api_")})
             merged_facts["cause"] = _normalise_cause(merged_facts.get("cause"))
             merged_facts["agents"] = _dedupe_agents(merged_facts.get("agents"))
             party_details = merged_facts.get("party_details") if isinstance(merged_facts.get("party_details"), dict) else {}
@@ -2493,63 +2511,127 @@ def register_automated_filing_routes(
 
     @app.post("/api/automated-filing/jobs/{job_id}/api-execute/create-draft")
     async def api_execute_create_draft(job_id: int):
-        """Create one editable official draft from the lawyer-confirmed facts."""
+        """Create one editable draft using the official court and account data."""
+        account_id = _active_account_id()
         with get_db() as conn:
             job = _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
             facts = job["facts"]
+            if facts.get("api_account_id") and facts["api_account_id"] != account_id:
+                raise HTTPException(status_code=409, detail="请切回开始本次立案的一张网账号后继续")
             existing_id = _norm(facts.get("api_draft_id"))
             if existing_id:
                 conn.execute("UPDATE automated_filing_jobs SET status='api_draft_created',updated_at=? WHERE id=?", (_now(), job_id))
                 _event(conn, job_id, "api_create_draft", "官网草稿已存在，本次自动复用", {"draft_id": existing_id})
                 conn.commit()
                 return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
-            template = _cached_court_draft_template(conn, _norm(facts.get("court_name")), _norm(facts.get("cause")))
-            # A former POST may already have succeeded but returned no ID.  In
-            # that case recover the one blank draft first; never POST again.
-            prior_missing_id = conn.execute(
+            if job["status"] not in {"confirmed", "api_failed", "api_creating_draft"}:
+                raise HTTPException(status_code=409, detail="请先完成立案信息确认")
+            legacy_attempt = conn.execute(
                 """SELECT 1 FROM automated_filing_events
                    WHERE job_id=? AND stage='api_create_draft' AND status='failed'
-                     AND detail_json LIKE '%未返回草稿编号%'
-                   ORDER BY id DESC LIMIT 1""",
+                     AND detail_json LIKE '%未返回草稿编号%' LIMIT 1""",
                 (job_id,),
             ).fetchone() is not None
 
-        async def recover_blank_draft() -> str:
-            listed = await automated_filing_api_call(
-                "GET", "/yzw-zxfw-lafw/api/v3/layy",
-                {"limit": 20, "page": 1, "ajlb": template["case_category"]},
-            )
-            return _recent_blank_draft_id(listed, court_name=_norm(facts.get("court_name")))
+        court_name = _norm(facts.get("court_name"))
+        pending = facts.get("api_draft_attempt")
+        draft_id = ""
+        with filing_account_scope(account_id):
+            if not pending and not legacy_attempt:
+                if _norm(facts.get("case_type")) not in {"", "民事一审"}:
+                    raise HTTPException(status_code=422, detail="当前 Token API 自动创建草稿支持民事一审")
+                court, (label, cause_code), profile = await asyncio.gather(
+                    _official_filing_court(court_name),
+                    _official_civil_cause(facts["cause"]),
+                    automated_filing_api_call("GET", "/yzw-zxfw-sxfw/api/v1/user/info"),
+                )
+                applicant = _official_filing_applicant(facts, profile)
+                court_id = court["fyid"]
+                listed = await automated_filing_api_call(
+                    "GET", f"{FILING_API_PATH}/layy", {"limit": 20, "page": 1, "ajlb": CIVIL_CASE_CATEGORY},
+                )
+                if not isinstance(listed, (list, dict)):
+                    raise HTTPException(status_code=502, detail="一张网未返回当前草稿列表，请稍后重试")
+                pending = {
+                    "court_id": court_id, "court_name": court_name, "cause_label": label, "cause_code": cause_code,
+                    "cause_for": facts["cause"],
+                    "baseline": sorted(_blank_draft_ids(listed, court_name=court_name, court_id=court_id)),
+                }
+                with get_db() as conn:
+                    row = conn.execute("SELECT facts_json FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
+                    if not row:
+                        raise HTTPException(status_code=404, detail="自动化立案任务不存在")
+                    current = _loads(row["facts_json"], {})
+                    if current.get("api_draft_id") or current.get("api_draft_attempt") or any(
+                        _norm(current.get(key)) != _norm(facts.get(key))
+                        for key in ("court_name", "cause", "case_type", "representation_mode", "applicant_role")
+                    ):
+                        raise HTTPException(status_code=409, detail="草稿状态或已确认信息发生变化，请刷新任务后继续")
+                    current.update({"api_draft_attempt": pending, "api_account_id": account_id})
+                    reserved = conn.execute(
+                        "UPDATE automated_filing_jobs SET facts_json=? WHERE id=? AND facts_json=?",
+                        (_json(current), job_id, row["facts_json"]),
+                    ).rowcount
+                    if reserved != 1:
+                        raise HTTPException(status_code=409, detail="草稿任务正在更新，请稍后继续")
+                    conn.commit()
 
-        recovered = False
-        if prior_missing_id:
-            draft_id = await recover_blank_draft()
-            if not draft_id:
-                raise HTTPException(status_code=502, detail="此前官网可能已创建草稿但未返回编号；未能唯一定位该草稿，已停止重试以避免重复创建")
-            recovered = True
-        else:
-            payload = {
-                "ajcx": "", "ajlx": template["case_type"], "tjcgsqsfqr": "",
-                "fyid": template["court_id"], "sqrsf": template["applicant_identity"],
-                "ajlb": template["case_category"], "pcSqrLx": "", "sqrlx": template["applicant_type"], "sfid": template["applicant_id"],
-                "citymc": "", "ftmc": "", "sfzscq": "", "sfysla": template["online_filing_flag"],
-                "lafs": int(template["filing_method"]) if template["filing_method"].isdigit() else template["filing_method"],
-            }
-            created = await automated_filing_api_call("POST", "/yzw-zxfw-lafw/api/v3/layy", payload)
-            draft_id = _draft_id_from_create_result(created)
-            if not draft_id:
-                # The POST has succeeded at this point.  Read after write and
-                # bind only an unambiguous blank draft rather than repeating it.
-                draft_id = await recover_blank_draft()
-                recovered = bool(draft_id)
-            if not draft_id:
-                raise HTTPException(status_code=502, detail="官网已响应但未返回草稿编号，且未能唯一定位新草稿；已停止后续写入以避免重复创建")
+                payload = {
+                    **court, **applicant, "ajcx": "", "ajlx": OFFICIAL_CAUSE_GROUP_CIVIL_FIRST_INSTANCE,
+                    "tjcgsqsfqr": "", "ajlb": CIVIL_CASE_CATEGORY, "pcSqrLx": "", "ftmc": "",
+                    "sfzscq": "1501_000010-2", "sfysla": "1501_000010-2", "lafs": 2,
+                }
+                try:
+                    created = await automated_filing_api_call("POST", f"{FILING_API_PATH}/layy", payload)
+                except HTTPException as exc:
+                    if exc.status_code in {401, 403, 409, 422}:
+                        # A rejected request can be corrected and retried. Keep
+                        # the guard for a timeout or any unknown write outcome.
+                        with get_db() as conn:
+                            row = conn.execute("SELECT facts_json FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
+                            if row:
+                                current = _loads(row["facts_json"], {})
+                                if current.get("api_draft_attempt") == pending:
+                                    current.pop("api_draft_attempt")
+                                    current.pop("api_account_id", None)
+                                    conn.execute("UPDATE automated_filing_jobs SET facts_json=? WHERE id=? AND facts_json=?",
+                                                 (_json(current), job_id, row["facts_json"]))
+                                    conn.commit()
+                    raise
+                draft_id = _draft_id_from_create_result(created)
+
+            recovered = not draft_id
+            if recovered:
+                listed = await automated_filing_api_call(
+                    "GET", f"{FILING_API_PATH}/layy", {"limit": 20, "page": 1, "ajlb": CIVIL_CASE_CATEGORY},
+                )
+                if pending:
+                    blanks = _blank_draft_ids(listed, court_name=court_name, court_id=pending["court_id"])
+                    blanks.difference_update(pending["baseline"])
+                else:
+                    # Compatibility with jobs left by the prior implementation.
+                    blanks = _blank_draft_ids(listed, court_name=court_name)
+                if len(blanks) != 1:
+                    raise HTTPException(status_code=409, detail="官网未返回草稿编号，暂时无法唯一定位本次草稿。请到一张网核对草稿列表，Stella 已暂停以避免重复创建")
+                draft_id = next(iter(blanks))
+
         with get_db() as conn:
             row = conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
-            facts = _loads(row["facts_json"], {})
-            facts.update({"api_draft_id": draft_id, "api_court_id": template["court_id"], "api_cause_code": template["cause_code"]})
-            conn.execute("UPDATE automated_filing_jobs SET status='api_draft_created',facts_json=?,updated_at=? WHERE id=?", (_json(facts), _now(), job_id))
-            _event(conn, job_id, "api_create_draft", "已找回并绑定官网可编辑草稿" if recovered else "已通过 Token API 创建官网可编辑草稿", {"draft_id": draft_id, "court_id": template["court_id"], "recovered": recovered})
+            if not row:
+                raise HTTPException(status_code=404, detail="自动化立案任务不存在")
+            current = _loads(row["facts_json"], {})
+            current.pop("api_draft_attempt", None)
+            current.update({"api_draft_id": draft_id, "api_account_id": account_id})
+            if pending:
+                current.update({
+                    "api_court_id": pending["court_id"], "api_court_name": pending["court_name"],
+                    "api_cause_code": pending["cause_code"], "api_cause_label": pending["cause_label"],
+                    "api_cause_for": pending["cause_for"],
+                })
+            conn.execute("UPDATE automated_filing_jobs SET status='api_draft_created',facts_json=?,updated_at=? WHERE id=?",
+                         (_json(current), _now(), job_id))
+            _event(conn, job_id, "api_create_draft", "已找回并绑定官网可编辑草稿" if recovered else "已通过 Token API 创建官网可编辑草稿",
+                   {"draft_id": draft_id, "court_id": current.get("api_court_id", ""), "recovered": recovered})
             conn.commit()
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 
@@ -2558,30 +2640,45 @@ def register_automated_filing_routes(
         """Write reviewed cause and basic filing text to the editable draft."""
         with get_db() as conn:
             job = _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
-            facts = job["facts"]
-            draft_id = _norm(facts.get("api_draft_id"))
-            template = _cached_court_draft_template(conn, _norm(facts.get("court_name")), _norm(facts.get("cause")))
+        facts = job["facts"]
+        draft_id = _norm(facts.get("api_draft_id"))
         if not draft_id:
             raise HTTPException(status_code=409, detail="尚未创建官网草稿，不能写入基本信息")
-        payload = {
-            "id": draft_id, "laayMz": template["cause_code"], "laay": _norm(facts.get("cause")), "gxhYs": "",
-            "ajmc": _norm(facts.get("case_name")), "ssqq": _norm(facts.get("lawsuit_request")),
-        }
+        if facts.get("api_court_name") and _normalise_court_name(facts["api_court_name"]) != _normalise_court_name(facts.get("court_name")):
+            raise HTTPException(status_code=409, detail="已创建的官网草稿属于原受诉法院，请核对法院后继续")
         raw_claim_amount = _norm(facts.get("claim_amount"))
         official_claim_amount = _official_claim_amount(raw_claim_amount)
         if raw_claim_amount and not official_claim_amount:
             raise HTTPException(
-                status_code=422,
-                detail="标的额须填写为可换算的阿拉伯数字金额，例如“300000元”或“30万元”；官网仅接受整数元",
+                status_code=422, detail="标的额须填写为可换算的阿拉伯数字金额，例如“300000元”或“30万元”；官网仅接受整数元",
             )
-        if official_claim_amount:
-            payload["sqbdje"] = official_claim_amount
-        await automated_filing_api_call("PATCH", "/yzw-zxfw-lafw/api/v3/layy", payload)
-        verified = await automated_filing_api_call("GET", f"/yzw-zxfw-lafw/api/v3/layy/layyxq/{draft_id}/0")
+        account_id = _active_account_id()
+        if facts.get("api_account_id") and facts["api_account_id"] != account_id:
+            raise HTTPException(status_code=409, detail="请切回开始本次立案的一张网账号后继续")
+        with filing_account_scope(account_id):
+            cause = _norm(facts.get("cause"))
+            if facts.get("api_cause_for") == cause and facts.get("api_cause_code") and facts.get("api_cause_label"):
+                cause_label, cause_code = facts["api_cause_label"], facts["api_cause_code"]
+            else:
+                cause_label, cause_code = await _official_civil_cause(cause)
+            payload = {
+                "id": draft_id, "laayMz": cause_code, "laay": cause_label, "gxhYs": "",
+                "ajmc": _norm(facts.get("case_name")), "ssqq": _norm(facts.get("lawsuit_request")),
+            }
+            if official_claim_amount:
+                payload["sqbdje"] = official_claim_amount
+            await automated_filing_api_call("PATCH", f"{FILING_API_PATH}/layy", payload)
+            verified = await automated_filing_api_call("GET", f"{FILING_API_PATH}/layy/layyxq/{draft_id}/0")
         layy, _parties, _agents, _materials = _filing_detail_sections(verified)
+        if _norm(layy.get("laayMz")) != cause_code:
+            raise HTTPException(status_code=502, detail="官网草稿未回读到已确认的案由，请稍后继续或到官网核对草稿")
         with get_db() as conn:
-            conn.execute("UPDATE automated_filing_jobs SET status='api_basic_info_written',updated_at=? WHERE id=?", (_now(), job_id))
-            _event(conn, job_id, "api_basic_info", "已通过 Token API 写入并回读官网基本信息", {"draft_id": draft_id, "cause_code": template["cause_code"], "official_case_name": _norm(layy.get("ajmc")), "claim_amount_yuan": official_claim_amount})
+            row = conn.execute("SELECT facts_json FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone()
+            current = _loads(row["facts_json"], {})
+            current.update({"api_cause_for": cause, "api_cause_label": cause_label, "api_cause_code": cause_code})
+            conn.execute("UPDATE automated_filing_jobs SET status='api_basic_info_written',facts_json=?,updated_at=? WHERE id=?",
+                         (_json(current), _now(), job_id))
+            _event(conn, job_id, "api_basic_info", "已通过 Token API 写入并回读官网基本信息", {"draft_id": draft_id, "cause_code": cause_code, "official_case_name": _norm(layy.get("ajmc")), "claim_amount_yuan": official_claim_amount})
             conn.commit()
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 
@@ -3013,9 +3110,7 @@ def register_automated_filing_routes(
         """Generate and register the official online service-address confirmation.
 
         The court page requires a pre-existing postal-address record and a
-        pre-existing saved signature.  This step only selects the most recent
-        records from the current lawyer account; it never creates an address or
-        asks the court to create a new signature.
+        saved signature. Use the designated or sole signature on this account.
         """
         with get_db() as conn:
             job = _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
@@ -3031,6 +3126,21 @@ def register_automated_filing_routes(
         if not service_slot:
             raise HTTPException(status_code=422, detail="官网草稿没有送达地址确认书上传栏位")
         already_attached = _service_address_is_attached(slots)
+        signature, address_id = None, ""
+        if not already_attached or replace:
+            addresses_page = await automated_filing_api_call("POST", "/yzw-zxfw-yhfw/api/v1/grxx/yjsd/list", {"pageNum": 1, "pageSize": 1000})
+            signatures_page = await automated_filing_api_call("POST", "/yzw-zxfw-ajfw/api/v1/dzqm/dzqmList", {"pageNum": 1, "pageSize": 1000})
+            addresses = addresses_page.get("data", addresses_page.get("records")) if isinstance(addresses_page, dict) else addresses_page
+            signatures = signatures_page.get("data", signatures_page.get("records")) if isinstance(signatures_page, dict) else signatures_page
+            address_id = next((_norm(item.get("bh")) for item in addresses or [] if isinstance(item, dict) and _norm(item.get("bh"))), "")
+            signatures = [item for item in signatures or [] if isinstance(item, dict) and _norm(item.get("osspath"))]
+            if not address_id:
+                raise HTTPException(status_code=422, detail="当前一张网账号没有已保存的邮寄送达地址，请先在官网个人信息中保存后继续")
+            if not signatures:
+                raise HTTPException(status_code=422, detail="当前一张网账号没有已保存的电子签名，请先在官网完成签名后继续")
+            signature = _service_address_signature(signatures)
+            if not signature:
+                raise HTTPException(status_code=422, detail="当前一张网账号有多份已保存的电子签名，请在官网草稿中选择签名并生成送达地址确认书，再回到 Stella 继续")
         if already_attached and replace:
             # The user has selected a specific saved electronic signature.  To
             # avoid retaining a confirmation generated with another signature,
@@ -3053,26 +3163,13 @@ def register_automated_filing_routes(
             if not service_slot or _service_address_is_attached(slots):
                 raise HTTPException(status_code=502, detail="官网未移除原送达地址确认书，已停止替换")
             already_attached = False
-        if not already_attached:
-            addresses_page = await automated_filing_api_call("POST", "/yzw-zxfw-yhfw/api/v1/grxx/yjsd/list", {"pageNum": 1, "pageSize": 1000})
-            signatures_page = await automated_filing_api_call("POST", "/yzw-zxfw-ajfw/api/v1/dzqm/dzqmList", {"pageNum": 1, "pageSize": 1000})
-            addresses = addresses_page.get("data", addresses_page.get("records", [])) if isinstance(addresses_page, dict) else []
-            signatures = signatures_page.get("data", signatures_page.get("records", [])) if isinstance(signatures_page, dict) else []
-            addresses = [item for item in addresses if isinstance(item, dict) and _norm(item.get("bh"))]
-            signatures = [item for item in signatures if isinstance(item, dict) and _norm(item.get("osspath"))]
-            if not addresses:
-                raise HTTPException(status_code=422, detail="当前法院账号没有已保存的邮寄送达地址，请先在官网个人信息中保存后重试")
-            if not signatures:
-                raise HTTPException(status_code=422, detail="当前法院账号没有已保存的签名记录，请先在官网完成签名后重试")
-            signature = _service_address_signature(signatures)
-            if not signature:
-                raise HTTPException(status_code=422, detail=f"当前法院账号未找到指定电子签名（版本号 {SERVICE_ADDRESS_SIGNATURE_VERSION}，签署时间 {SERVICE_ADDRESS_SIGNATURE_TIME}）")
+        if signature:
             # The material page does not use the case-space ``isMake`` flag.
             # It posts the configured upload slot to this endpoint, which both
             # creates the PDF and attaches it to the draft's required slot.
             payload = dict(service_slot)
             payload.update({
-                "qmPath": _norm(signature.get("osspath")), "sddzxxId": _norm(addresses[0].get("bh")),
+                "qmPath": _norm(signature.get("osspath")), "sddzxxId": address_id,
                 "sjhm": "", "email": "", "layyid": _norm(layy.get("id")),
                 "fyId": _norm(layy.get("fyid") or layy.get("fyId")), "ssclid": _norm(service_slot.get("ssclid") or service_slot.get("id")),
             })
@@ -3083,11 +3180,15 @@ def register_automated_filing_routes(
                 raise HTTPException(status_code=502, detail="官网未将送达地址确认书挂入立案材料栏位")
         with get_db() as conn:
             conn.execute("UPDATE automated_filing_jobs SET status='api_service_address_generated',updated_at=? WHERE id=?", (_now(), job_id))
-            _event(conn, job_id, "api_service_address", "已通过指定电子签名生成并挂入官网送达地址确认书栏位", {"already_present": already_attached, "replaced": replace, "signature_version": SERVICE_ADDRESS_SIGNATURE_VERSION, "signature_time": SERVICE_ADDRESS_SIGNATURE_TIME})
+            _event(conn, job_id, "api_service_address", "已确认官网草稿已附送达地址确认书", {
+                "already_present": already_attached, "replaced": replace,
+                "signature_version": _norm((signature or {}).get("version")),
+                "signature_time": _norm((signature or {}).get("qssj")),
+            })
             conn.commit()
             return _job_dict(conn, conn.execute("SELECT * FROM automated_filing_jobs WHERE id=?", (job_id,)).fetchone())
 
-    async def run_token_api_execution(job_id: int) -> None:
+    async def run_token_api_execution(job_id: int, account_id: str) -> None:
         stages = [
             ("api_create_draft", "api_creating_draft", "正在通过 Token API 创建官网草稿", api_execute_create_draft),
             ("api_basic_info", "api_writing_basic_info", "正在通过 Token API 写入基本信息", api_execute_basic_info),
@@ -3124,7 +3225,10 @@ def register_automated_filing_routes(
                 # blank party card.  Token API calls are the sole writer for
                 # an automated-filing draft; the workbench shows only their
                 # read-back result.
-                await operation(job_id)
+                if _active_account_id() != account_id:
+                    raise HTTPException(status_code=409, detail="一张网账号已切换，请切回开始本次立案的账号后继续")
+                with filing_account_scope(account_id):
+                    await operation(job_id)
         except Exception as exc:
             detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
             if not detail:
@@ -3147,8 +3251,11 @@ def register_automated_filing_routes(
             return {"ok": True, "started": False, "message": "Token API 已在执行中"}
         if job["status"] not in {"confirmed", "api_failed", "api_draft_created", "api_basic_info_written", "api_materials_uploaded", "api_ocr_completed", "api_parties_written", "api_agent_written"}:
             raise HTTPException(status_code=409, detail="请先完成立案信息确认后再启动 Token API")
+        account_id = _active_account_id()
+        if job["facts"].get("api_account_id") and job["facts"]["api_account_id"] != account_id:
+            raise HTTPException(status_code=409, detail="请切回开始本次立案的一张网账号后继续")
         running_api_jobs.add(job_id)
-        asyncio.create_task(run_token_api_execution(job_id))
+        asyncio.create_task(run_token_api_execution(job_id, account_id))
         return {"ok": True, "started": True, "message": "已启动 Token API 分项执行；将在正式提交前自动停止"}
 
     @app.get("/api/automated-filing/jobs/{job_id}/official-check")
@@ -3276,7 +3383,7 @@ def register_automated_filing_routes(
             summary = f"正在执行“{active['title']}”；状态会在每个官网 Token API 调用完成后自动更新。"
         elif failed:
             phase, is_running = "failed", False
-            summary = f"“{failed['title']}”未完成，后续步骤已自动停止；可在问题处理后从当前草稿续跑。"
+            summary = f"“{failed['title']}”未完成，后续步骤已自动停止。处理提示中的问题后可继续执行。"
         elif job["status"] == "confirmed" and completed == 0:
             phase, is_running = "waiting_start", False
             summary = "信息已确认，尚未发起 Token API 写入；当前没有后台接口请求在运行。"
