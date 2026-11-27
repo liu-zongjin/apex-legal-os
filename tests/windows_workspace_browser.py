@@ -123,8 +123,8 @@ def main():
             assert page.evaluate('window.updateChecks') == 1
             page.evaluate("window.dispatchEvent(new Event('focus'))")
             assert page.evaluate('window.updateChecks') == 1
-            update.click(force=True)
-            assert page.evaluate('window.updateChecks') == 2
+            update.press('Enter')
+            page.wait_for_function('window.updateChecks === 2')
             browser.close()
     print('Windows workspace: viewport, DPI, light/dark, AI and case AI passed')
 
