@@ -1,5 +1,10 @@
 # APEX System Map
 
+Source update checks distinguish Git availability, checkout validity and GitHub
+revision lookup. The macOS source menu and Windows source workspace expose a
+copyable deployment prompt even on failure. Windows automatic checks continue
+to update the toolbar without opening a dialog.
+
 ## First civil filing through Court Online Service (2026-11-27)
 
 The existing Token API workflow resolves court identity and province/city from

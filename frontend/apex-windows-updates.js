@@ -2,6 +2,7 @@
 (() => {
   'use strict';
   if(window.top!==window)return;
+  const sourcePrompt='请根据 https://github.com/liu-zongjin/apex-legal-os 中 docs/WINDOWS_SOURCE_DEPLOYMENT.md 的源码更新步骤，将此 Windows 电脑上的 Stella 源码版更新到 GitHub main。先检查 Git、现有源码目录和 GitHub 连通性，保留旧版本、案件、附件、数据库和设置。验证新版能正常打开、读取原有资料并退出，失败时保留旧入口并说明具体原因。';
   let initialized=false,busy=false,lastCheck=0,button,availableVersion='',availableRevision='',sourceUpdate=false;
   function init(){
     if(initialized||!window.StellaWindows)return;
@@ -31,23 +32,73 @@
             try{localStorage.setItem(noticeKey,revision);}catch{}
           }catch{}
         }
-      }catch{setStatus('重试检查更新','暂时无法检查更新，点击重试');}
+        if(manual&&result.available&&sourceUpdate)showAvailable();
+      }catch(error){
+        availableVersion='';availableRevision='';
+        button.classList.remove('active');
+        setStatus('重试检查更新','暂时无法检查更新，点击重试');
+        button.disabled=false;
+        if(manual&&(window.StellaWindows.source||sourceUpdate)){
+          const detail=typeof error==='string'?error:error?.message;
+          showDialog('暂时无法检查源码更新',detail||'更新检查未完成，请让 AI 检查本机源码安装。',true);
+        }
+      }
       finally{busy=false;button.disabled=false;}
     }
-    button.onclick=()=>{
-      if(!availableVersion)return check(true);
+    function showAvailable(){
+      const description=sourceUpdate?'请先保存正在编辑的内容。继续后将关闭 Stella 并打开更新窗口，在独立目录下载、编译和检查新版本。':'请先保存正在编辑的内容。继续后将安全关闭本地服务并进入组件更新界面。';
+      const isSource=sourceUpdate,revision=availableRevision;
+      showDialog(`Stella ${availableVersion} 已可用`,description,isSource,async()=>{
+        await window.StellaWindows.invoke(isSource?'update_source':'return_to_installer',isSource?{expectedRevision:revision}:{});
+      });
+    }
+    function showDialog(heading,description,offerCopy,update){
+      if(document.getElementById('stella-windows-update-dialog'))return;
       const mask=document.createElement('div');mask.className='stella-messages-mask';
-      const panel=document.createElement('section');panel.className='stella-messages';panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label','Stella 更新');panel.tabIndex=-1;
+      const panel=document.createElement('section');panel.id='stella-windows-update-dialog';panel.className='stella-messages';panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',heading);
       const head=document.createElement('header');head.className='stella-messages-head';
-      const title=document.createElement('h2');title.textContent=`Stella ${availableVersion} 已可用`;head.append(title);
-      const content=document.createElement('p');content.style.padding='20px';content.textContent=sourceUpdate?'请先保存正在编辑的内容。继续后将关闭 Stella 并打开更新窗口，在独立目录下载、编译和检查新版本；旧版本和用户资料会保留。':'请先保存正在编辑的内容。继续后将安全关闭本地服务，进入组件更新界面；下载并校验完成后可重新打开工作空间。';
+      const title=document.createElement('h2');title.textContent=heading;head.append(title);
+      const content=document.createElement('p');content.style.padding='20px';content.textContent=description;
       const actions=document.createElement('div');actions.className='stella-messages-tools';
-      const cancel=document.createElement('button'),proceed=document.createElement('button');cancel.textContent='稍后';proceed.textContent='已保存，前往更新';
+      const cancel=document.createElement('button');cancel.textContent=update?'稍后':'关闭';
       const close=()=>{mask.remove();button.focus();};cancel.onclick=close;
-      proceed.onclick=async()=>{proceed.disabled=true;try{await window.StellaWindows.invoke(sourceUpdate?'update_source':'return_to_installer',sourceUpdate?{expectedRevision:availableRevision}:{});}catch{content.textContent='暂时无法结束后台任务或启动更新，请重启 Stella 后重试。';proceed.disabled=false;}};
-      panel.addEventListener('keydown',event=>{if(event.key==='Escape')close();if(event.key==='Tab'){event.preventDefault();(document.activeElement===cancel?proceed:cancel).focus();}});
-      actions.append(cancel,proceed);panel.append(head,content,actions);mask.append(panel);document.body.append(mask);cancel.focus();
-    };
+      actions.append(cancel);
+      let manualCopy;
+      if(offerCopy){
+        const copy=document.createElement('button');copy.textContent='复制更新指令';
+        copy.onclick=async()=>{
+          try{
+            await navigator.clipboard.writeText(sourcePrompt);
+            copy.textContent='已复制更新指令';
+          }catch{
+            if(!manualCopy){
+              manualCopy=document.createElement('textarea');manualCopy.readOnly=true;manualCopy.rows=5;
+              manualCopy.setAttribute('aria-label','AI 更新指令');manualCopy.value=sourcePrompt;
+              panel.insertBefore(manualCopy,actions);
+            }
+            copy.textContent='请手动复制已选指令';
+            manualCopy.focus();manualCopy.select();
+          }
+        };
+        actions.append(copy);
+      }
+      if(update){
+        const proceed=document.createElement('button');proceed.textContent='已保存，前往更新';
+        proceed.onclick=async()=>{proceed.disabled=true;try{await update();}catch{content.textContent='暂时无法结束后台任务或启动更新，请重启 Stella 后重试。';proceed.disabled=false;}};
+        actions.append(proceed);
+      }
+      panel.addEventListener('keydown',event=>{
+        if(event.key==='Escape')close();
+        if(event.key==='Tab'){
+          const controls=[...panel.querySelectorAll('button:not(:disabled),textarea')];
+          const index=controls.indexOf(document.activeElement);
+          event.preventDefault();
+          controls[(index+(event.shiftKey?-1:1)+controls.length)%controls.length].focus();
+        }
+      });
+      panel.append(head,content,actions);mask.append(panel);document.body.append(mask);cancel.focus();
+    }
+    button.onclick=()=>availableVersion?showAvailable():check(true);
     // Let the local workspace render first and count failed attempts for throttling.
     const startupCheck=setTimeout(()=>check(),3000);
     const scheduledCheck=()=>{if(!document.hidden && lastCheck)check();};

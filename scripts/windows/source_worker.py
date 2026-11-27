@@ -11,6 +11,53 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 
+def check_source_update(root):
+    import re
+    import shutil
+    import subprocess
+
+    def error(message):
+        return {'event': 'error', 'message': message}
+
+    def git(*args, timeout=15):
+        result = subprocess.run(
+            [executable, *args], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, errors="replace", timeout=timeout,
+            stdin=subprocess.DEVNULL, check=False,
+            env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'},
+        )
+        return result.stdout.strip() if result.returncode == 0 else ''
+
+    if not root.is_dir():
+        return error('找不到 Stella 连接的源码目录。请检查目录是否已移动或删除。')
+    executable = shutil.which('git')
+    if not executable:
+        return error('Stella 找不到 Git。请检查 Git for Windows 是否已安装并加入 PATH，重新打开 Stella 后再试。')
+    try:
+        if not git('--version'):
+            return error('Stella 无法运行 Git。请检查 Git for Windows 是否可用。')
+    except (OSError, subprocess.SubprocessError):
+        return error('Stella 无法运行 Git。请检查 Git for Windows 是否可用。')
+
+    if not (root / '.git').exists():
+        return error('源码目录缺少 Git 仓库信息（.git）。请让 AI 检查原安装并按源码更新步骤恢复。')
+    try:
+        current = git('-C', str(root), 'rev-parse', 'HEAD')
+    except (OSError, subprocess.SubprocessError):
+        current = ''
+    if not re.fullmatch(r'[0-9a-f]{40}', current):
+        return error('无法读取本地源码版本。请检查源码目录权限和 Git 仓库是否完整。')
+
+    try:
+        remote, _, _ = git('ls-remote', '--refs', 'https://github.com/liu-zongjin/apex-legal-os.git',
+                           'refs/heads/main', timeout=30).partition('\t')
+    except (OSError, subprocess.SubprocessError):
+        remote = ''
+    if not re.fullmatch(r'[0-9a-f]{40}', remote):
+        return error('无法从 GitHub 读取主分支版本。请检查 GitHub 网络连接或代理设置。')
+    return {'event': 'check', 'source': True, 'available': current != remote,
+            'version': '源码 ' + remote[:8], 'build': remote}
+
+
 def main():
     action = sys.argv[1] if len(sys.argv) == 2 else ''
     emit = lambda **data: print(json.dumps(data, ensure_ascii=True), flush=True)
@@ -18,18 +65,7 @@ def main():
         emit(event='probe', supported=True, installed=True, source=True)
         return
     if action == 'check':
-        import subprocess
-        try:
-            current = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True, timeout=20).strip()
-            remote = subprocess.check_output(['git', 'ls-remote', '--refs',
-                'https://github.com/liu-zongjin/apex-legal-os.git', 'refs/heads/main'],
-                text=True, timeout=30).strip().split()[0]
-            if len(current) != 40 or len(remote) != 40:
-                raise ValueError('无效的版本信息')
-            emit(event='check', source=True, available=current != remote,
-                 version='源码 ' + remote[:8], build=remote)
-        except Exception:
-            emit(event='error', message='无法检查源码更新，请检查 Git 和网络。')
+        emit(**check_source_update(ROOT))
         return
     if action != 'launch':
         emit(event='error', message='源码模式请通过部署说明维护，暂不支持此操作。')

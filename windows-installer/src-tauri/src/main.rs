@@ -232,7 +232,8 @@ fn main() {
             // Only the top-level local application receives a narrow native adapter.
             if let Ok(url) = window.url() {
                 if url.host_str() == Some("127.0.0.1") && url.port() == Some(18865) {
-                    let _ = window.eval("window.StellaWindows={invoke:window.__TAURI__.core.invoke};window.dispatchEvent(new Event('stella:windows-ready'));");
+                    let source = source_root().is_some();
+                    let _ = window.eval(&format!("window.StellaWindows={{invoke:window.__TAURI__.core.invoke,source:{source}}};window.dispatchEvent(new Event('stella:windows-ready'));"));
                 }
             }
         })
