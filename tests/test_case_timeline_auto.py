@@ -140,6 +140,22 @@ class AutoTimelineTests(unittest.TestCase):
         self.assertEqual(job['timeline_coverage']['processed_chunks'],2)
         self.assertEqual(len(job['timeline_batches']),1)
         self.assertEqual(self.client.post('/api/case-workflows/cases/1/tasks',json={'kind':'timeline','paths':['新增证据.txt'],'parent_timeline_id':first['id'],'parent_revision':1}).status_code,409)
+    def test_material_party_can_be_corrected_when_adding_to_timeline(self):
+        (self.root/'原告起诉状.docx').write_text('old')
+        first=self.done(self.client.post('/api/case-workflows/cases/1/timeline-auto',json={}).json()['job'])
+        (self.root/'被告方材料').mkdir()
+        (self.root/'被告方材料'/'新增证据.txt').write_text('new')
+        path='被告方材料/新增证据.txt'
+        classification=self.client.post('/api/case-workflows/cases/1/timeline-classify',json={'paths':[path]})
+        self.assertEqual(classification.json()['items'][0]['party'],'被告方')
+        unnamed=self.root/'补充材料.docx';document=Document();document.add_paragraph('甲公司提交的补充材料');document.save(unnamed)
+        identified=self.client.post('/api/case-workflows/cases/1/timeline-classify',json={'paths':[unnamed.name]})
+        self.assertEqual(identified.json()['items'][0]['party'],'原告方')
+        created=self.client.post('/api/case-workflows/cases/1/tasks',json={'kind':'timeline','paths':[path],'parent_timeline_id':first['id'],'parent_revision':first['revision'],'source_parties':{path:'原告方'}})
+        self.assertEqual(created.status_code,200,created.text)
+        job=self.done(created.json()); self.assertEqual(job['status'],'completed',job)
+        self.assertEqual(next(row for row in job['timeline_events'] if row['evidence'][0]['path']==path)['party'],'原告方')
+        self.assertEqual(next(row for row in job['sources'] if row['path']==path)['party'],'原告方')
     def test_vision_model_reads_pages_without_cloud_ocr(self):
         import asyncio
         import fitz

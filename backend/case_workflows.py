@@ -289,6 +289,12 @@ class CaseWorkflowService:
         details = {item['path']:item for item in (source_details or [])}
         if parent_timeline:
             details.update({item['path']:item for item in parent_timeline['sources']})
+        overrides = body.get('source_parties', {}) if kind == 'timeline' else {}
+        valid_parties = {'原告方','被告方','上诉人','被上诉人','申请人','被申请人','待确认'}
+        if not isinstance(overrides, dict) or any(key not in paths or not isinstance(value,str) or value not in valid_parties for key,value in overrides.items()):
+            raise HTTPException(422, '材料来源方无效')
+        if parent_timeline and any(path in prior_paths for path in overrides):
+            raise HTTPException(422, '已有时间轴材料不能在追加时更改来源方')
         snapshots = []
         for path in paths:
             source, item = self.source(root, path)
@@ -303,7 +309,7 @@ class CaseWorkflowService:
                 match = PLEADING.search(Path(path).name)
                 title = str(known.get('document_type') or (match.group() if match else '案件材料'))
                 item['document_type'] = title
-                item['party'] = str(known.get('party') or side_for(path, title, parties))
+                item['party'] = str(overrides.get(path) or known.get('party') or side_for(path, title, parties))
             snapshots.append(item)
         if expected_sources is not None and [(item['path'], item['sha256']) for item in snapshots] != expected_sources:
             raise HTTPException(409, '材料在任务创建后发生变化，请建立后继任务')
@@ -1123,6 +1129,27 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         root, job = await _run_in_thread(create_checked)
         service.launch(root, job)
         return job
+
+    @app.post('/api/case-workflows/cases/{case_id}/timeline-classify')
+    async def classify_timeline_sources(case_id: int, request: Request):
+        require_action(request)
+        from .case_timeline_discovery import PLEADING, side_for, _content_head, MAX_PDF_BYTES, MAX_WORD_BYTES
+        body = await request.json()
+        paths = body.get('paths') if isinstance(body, dict) else None
+        if not isinstance(paths, list) or len(paths)>40 or not all(isinstance(path,str) for path in paths):
+            raise HTTPException(422, '请选择不超过40份材料')
+        def classify():
+            root=service.root(case_id); parties=service.parties(case_id); rows=[]
+            for path in paths:
+                source,item=service.source(root,path)
+                match=PLEADING.search(source.name)
+                title=match.group() if match else ''
+                party=side_for(item['path'],title,parties)
+                if party=='待确认' and source.suffix.lower() in {'.docx','.pdf'} and source.stat().st_size <= (MAX_PDF_BYTES if source.suffix.lower()=='.pdf' else MAX_WORD_BYTES):
+                    party=side_for(item['path']+'\n'+_content_head(source),title,parties)
+                rows.append({'path':item['path'],'party':party})
+            return {'items':rows}
+        return await _run_in_thread(classify)
 
     @app.post('/api/case-workflows/cases/{case_id}/timeline-auto')
     async def auto_timeline(case_id: int, request: Request):

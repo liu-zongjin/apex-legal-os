@@ -26,6 +26,13 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    assert page.locator('.side-other').count()==1
    assert page.locator('.timeline-entry').first.bounding_box()['y']<600
    assert page.locator('.timeline-editor').is_hidden()
+   assert page.locator('.timeline-mini [data-mini-target]').count()==2
+   assert page.locator('.case-bar .segmented').bounding_box()['x'] < page.locator('#caseSearch').bounding_box()['x']
+   page.set_viewport_size({'width':1440,'height':500})
+   page.locator('.timeline-mini [data-mini-target]').last.click()
+   page.wait_for_function("document.querySelector('.timeline-mini [data-mini-target]:last-child').getAttribute('aria-current')==='true'")
+   assert page.locator('.timeline-legend').bounding_box()['y'] >= page.locator('.case-bar').bounding_box()['height']
+   page.set_viewport_size({'width':1440,'height':900})
    page.screenshot(path=str(p/'timeline-desktop.png'))
    page.locator('[data-time-event]').first.click();assert page.locator('.timeline-editor').is_visible()
    page.locator('[data-time-source]').first.click();page.frame_locator('#sourcePreview').locator('#page').wait_for();page.keyboard.press('Escape')
@@ -34,6 +41,15 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    page.set_viewport_size({'width':390,'height':844});page.locator('.timeline-tools > summary').click() if page.locator('.timeline-tools').get_attribute('open') is not None else None
    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
    page.screenshot(path=str(p/'timeline-mobile.png'))
+   page.set_viewport_size({'width':1440,'height':500})
+   page.evaluate('''() => {
+      const list=document.querySelector('.timeline-list'), mini=document.querySelector('.timeline-mini');
+      const card=list.querySelector('.timeline-pair'), marker=mini.querySelector('button');
+      for(let i=0;i<30;i++){const next=card.cloneNode(true), button=next.querySelector('[data-time-event]');button.dataset.timeEvent='fixture-'+i;list.append(next);const dot=marker.cloneNode(true);dot.dataset.miniTarget='fixture-'+i;dot.removeAttribute('aria-current');mini.append(dot);}
+   }''')
+   page.locator('[data-time-event="fixture-29"]').evaluate('(node)=>node.scrollIntoView({block:"center"})')
+   page.wait_for_function("document.querySelector('[data-mini-target=fixture-29]').getAttribute('aria-current')==='true'")
+   assert page.locator('.timeline-mini').evaluate('(node)=>node.scrollTop>0')
    assert not errors,errors
    browser.close()
   print('Narrative timeline browser check passed')

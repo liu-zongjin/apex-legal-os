@@ -86,7 +86,9 @@ def run(output):
                 page.locator('#filePicker').evaluate('(el)=>el.removeAttribute("style")')
                 for mode,label in [('timelineMode','从这些材料提取事件'),('bookMode','把这些材料列为候选证据'),('factMode','用这些材料核对文书')]:
                     page.locator('#'+mode).click()
-                    if mode=='timelineMode': page.locator('#chooseTimelineEvidence').click()
+                    if mode=='timelineMode':
+                        page.locator('#chooseTimelineEvidence').click()
+                        continue
                     frame.locator('#archiveAssignBtn').click()
                     assert label in frame.locator('[data-code="source"]').inner_text()
                     frame.locator('[data-code="source"]').press('Escape')
@@ -226,7 +228,6 @@ def run(output):
                 page.locator('#timelineMode').click()
                 page.locator('#timelineDiscovery').wait_for()
                 page.locator('#chooseTimelineEvidence').click()
-                page.locator('#draft').fill('')
                 page.locator('#submit').click()
                 page.locator('#saveTimeline').wait_for(state='attached',timeout=20000)
                 page.locator('.timeline-tools > summary').click()
@@ -313,8 +314,10 @@ def run(output):
                 page.locator('#addTimelineMaterials').click()
                 frame.locator('.file-row').filter(has_text='03_草稿.txt').click()
                 frame.locator('#archiveAssignBtn').click()
-                frame.locator('[data-code="source"]').click()
                 page.locator('#sources').get_by_text('03_草稿.txt').wait_for()
+                page.locator('#sources details > summary').click()
+                page.locator('#sources [data-source-party="被告方"]').click()
+                assert '被告方' in page.locator('#sources summary').inner_text()
                 page.locator('#submit').click()
                 page.locator('#saveTimeline').wait_for(timeout=20000)
                 page.wait_for_function("document.querySelectorAll('[data-time-event]').length===4")

@@ -53,6 +53,11 @@ case party groups; roles shared by opposing groups stay unclassified. The
 chronology uses a continuous page axis, compact filter/export disclosures and
 a review drawer. Unknown sources are explicitly labelled, never inferred as
 the client's own side.
+The timeline adds a scroll-aware, keyboard-accessible date index and sticky
+source headings. `timeline-classify` validates case-scoped source paths and
+suggests parties from paths and bounded document text using the same local discovery logic; optional per-source
+party corrections apply only to new timeline inputs, survive task snapshots,
+and propagate to extracted events. Inherited sources cannot be rewritten.
 
 The AI file picker accepts an entire bound case folder as a case-scoped root
 selection, excluding Stella's generated-output folder to prevent recursively
