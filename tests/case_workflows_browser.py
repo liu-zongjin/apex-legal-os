@@ -234,6 +234,14 @@ def run(output):
                 page.locator('.timeline-delivery > summary').click()
                 assert page.locator('[data-time-event]').count()==2
                 assert page.locator('.timeline-entry.has-conflict').count()==2
+                comparison=page.locator('.timeline-comparison').first
+                comparison.locator('summary').click()
+                assert '日期不同' in comparison.inner_text()
+                assert comparison.locator('.timeline-comparison-peer').count()>=1
+                comparison.locator('[data-time-source]').first.click()
+                assert page.locator('#preview').is_visible()
+                page.keyboard.press('Escape')
+                comparison.locator('summary').click()
                 page.locator('[data-time-category="履行付款"]').click()
                 assert page.locator('[data-time-event]').count()==1
                 page.locator('[data-time-category="*"]').click()
