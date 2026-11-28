@@ -152,6 +152,16 @@ class AutoTimelineTests(unittest.TestCase):
         self.assertIn('原页识读',parsed['content']);self.assertEqual(parsed['visual_pages'],[1])
         original_service.parse_file.assert_not_called()
 
+    def test_word_preview_falls_back_to_numbered_paragraphs_without_converter(self):
+        path=self.root/'原告起诉状.docx'
+        document=Document();document.add_paragraph('2026年1月1日甲公司付款。');document.save(path)
+        job=self.done(self.client.post('/api/case-workflows/cases/1/timeline-auto',json={}).json()['job'])
+        with patch('backend.case_workflows._convert_word',side_effect=RuntimeError('未安装转换程序')):
+            response=self.client.get(f'/api/case-workflows/cases/1/tasks/{job["id"]}/material-preview',params={'path':path.name,'event_id':job['timeline_events'][0]['id']})
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertIn('第1段',response.text)
+        self.assertIn('2026年1月1日甲公司付款',response.text)
+
 
 class CombinedVisionTests(unittest.IsolatedAsyncioTestCase):
     async def test_combined_uses_visual_pages_instead_of_silently_dropping_them(self):

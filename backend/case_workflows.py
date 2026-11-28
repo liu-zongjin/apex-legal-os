@@ -13,10 +13,12 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import threading
 import tempfile
 import time
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -1166,7 +1168,26 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                     role_groups.setdefault(label, set()).add('client' if party.get('party_group') == 'client' else 'other')
                     break
         sides = {label:next(iter(groups)) for label, groups in role_groups.items() if len(groups) == 1}
-        return {'job':job, 'scan':scan, 'created':created, 'party_sides':sides}
+        def word_locations():
+            from docx import Document
+            locations, cache = {}, {}
+            for event in (job or {}).get('timeline_events', []):
+                for ref in event.get('evidence', []):
+                    path = ref.get('path', '')
+                    if not path.lower().endswith('.docx') or not ref.get('quote'): continue
+                    try:
+                        if path not in cache:
+                            item = next(row for row in job['sources'] if row['path'] == path)
+                            service.source(root, path, item['sha256'])
+                            cache[path] = [p.text for p in Document(service.input_path(root,job,item)).paragraphs]
+                        quote = re.sub(r'\s+', '', ref['quote'])
+                        matches = [i for i,text in enumerate(cache[path],1) if quote and quote in re.sub(r'\s+', '', text)]
+                        if len(matches) == 1: locations[event['id']] = f'Word 第{matches[0]}段'
+                    except (OSError, ValueError, KeyError, StopIteration, HTTPException, zipfile.BadZipFile):
+                        continue
+            return locations
+        locations = await _run_in_thread(word_locations) if job and job.get('status') == 'completed' else {}
+        return {'job':job, 'scan':scan, 'created':created, 'party_sides':sides, 'word_locations':locations}
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}')
     def detail(case_id: int, job_id: str):
@@ -1413,9 +1434,37 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         return {'path':path,'pages':count,'page_basis':'Word转换后PDF页码' if Path(path).suffix.lower() in {'.doc','.docx'} else '原件物理页码'}
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-preview')
-    def material_preview(case_id: int,job_id: str,path: str,page: int = 1):
+    def material_preview(case_id: int,job_id: str,path: str,page: int = 1, event_id: str = ''):
         from urllib.parse import quote
-        _,count=material_pdf(case_id,job_id,path)
+        try:
+            # A paragraph-anchored Word citation must open at that paragraph,
+            # not at an arbitrary first page of a converted copy.
+            if event_id and Path(path).suffix.lower() == '.docx':
+                raise RuntimeError('使用 Word 段落定位')
+            _,count=material_pdf(case_id,job_id,path)
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+            if Path(path).suffix.lower() != '.docx':
+                raise HTTPException(422, str(error))
+            from docx import Document
+            from html import escape
+            root,job=service.load(case_id,job_id)
+            item=next((item for item in job['sources'] if item['path']==path),None)
+            if not item: raise HTTPException(404,'材料不属于本次任务')
+            service.source(root,item['path'],item['sha256'])
+            original=service.input_path(root,job,item)
+            event=next((row for row in job.get('timeline_events',[]) if row.get('id')==event_id),None)
+            ref=event['evidence'][0] if event and event.get('evidence') and event['evidence'][0]['path']==path else {}
+            cited=str(ref.get('quote') or '')
+            paragraphs=[p.text for p in Document(original).paragraphs]
+            rows=[]
+            for index,text in enumerate(paragraphs,1):
+                if not text.strip(): continue
+                normalized=re.sub(r'\s+', '',text)
+                needle=re.sub(r'\s+', '',cited)
+                found=bool(needle and (needle in normalized or normalized in needle and len(normalized)>=8))
+                rows.append(f'<p id="{index}"'+(' class="match"' if found else '')+f'><small>第{index}段</small><br>{escape(text)}</p>')
+            body=''.join(rows)
+            return HTMLResponse('<!doctype html><meta charset="utf-8"><style>body{max-width:760px;margin:30px auto;padding:0 24px;font:16px/1.8 sans-serif}small{color:#667}p{white-space:pre-wrap}.match{background:#fff1bc}</style>'+body+'<script>document.querySelector(".match")?.scrollIntoView({block:"center"})</script>',headers={'Cache-Control':'no-store'})
         if not 1 <= page <= count:
             raise HTTPException(422,'预览页码超出范围')
         url=f'/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-page?path={quote(path,safe="")}'
