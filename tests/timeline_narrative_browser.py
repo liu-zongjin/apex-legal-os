@@ -26,6 +26,19 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    assert page.locator('.side-other').count()==1
    assert page.locator('.timeline-entry').first.bounding_box()['y']<600
    assert page.locator('.timeline-editor').is_hidden()
+   page.locator('.side-client [data-time-event]').click()
+   editor=page.locator('.timeline-editor');button=editor.locator('#saveTimelineReview')
+   page.wait_for_timeout(100)
+   axis=page.locator('.timeline-list').bounding_box();panel=editor.bounding_box()
+   assert panel['x']>=axis['x']+axis['width']/2-2, (axis,panel)
+   assert button.inner_text()=='保存'
+   first=button.bounding_box();assert first['y']>=panel['y'] and first['y']+first['height']<=panel['y']+panel['height']+1, (first,panel)
+   editor.evaluate('(el)=>el.scrollTop=el.scrollHeight')
+   last=button.bounding_box();assert abs(first['y']-last['y'])<=2, (first,last)
+   page.locator('#closeTimelineReview').click()
+   page.locator('.side-other [data-time-event]').click()
+   panel=editor.bounding_box();assert panel['x']+panel['width']<=axis['x']+axis['width']/2+2, (axis,panel)
+   page.locator('#closeTimelineReview').click()
    assert page.locator('.timeline-mini [data-mini-target]').count()==2
    assert page.locator('.case-bar .segmented[aria-label=办理事项]').bounding_box()['x'] < page.locator('#caseSearch').bounding_box()['x']
    page.set_viewport_size({'width':1440,'height':500})

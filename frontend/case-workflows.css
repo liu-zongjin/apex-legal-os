@@ -298,3 +298,7 @@ summary:focus-visible{outline:2px solid var(--apex-accent);outline-offset:3px}
 @media(max-width:600px){.timeline-editor .timeline-review-row{grid-template-columns:88px minmax(0,1fr);gap:8px}.timeline-fused .timeline-editor:not([hidden]){top:calc(var(--workflow-context-offset,80px) + 46px)}}
 
 .timeline-editor:not([hidden]),.timeline-fused .timeline-editor:not([hidden]){top:var(--timeline-editor-offset,16px);max-height:calc(100vh - var(--timeline-editor-offset,16px) - 16px)}
+
+/* Keep the selected event visible and the save action within reach. */
+@media(min-width:701px){.timeline-editor:not([hidden]){width:min(560px,calc(100vw - 32px),var(--timeline-editor-lane,560px));right:var(--timeline-editor-right,16px);left:auto}.timeline-editor.editor-opposite-left:not([hidden]){left:var(--timeline-editor-left,16px);right:auto}}
+.timeline-editor .timeline-review-footer{position:sticky;bottom:-20px;z-index:2;margin:0 -20px -20px;padding:12px 20px;background:var(--apex-surface-solid);border-top:1px solid var(--apex-border-subtle);box-shadow:0 -8px 18px color-mix(in srgb,var(--apex-text) 6%,transparent)}
