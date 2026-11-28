@@ -9,6 +9,8 @@
   const statusNames = {queued:'排队中',running:'办理中',completed:'已交付',failed:'失败',cancelled:'已停止',interrupted:'已中断'};
   const resultNames = {supported:'AI初核支持',contradicted:'AI初核矛盾',not_found:'未找到出处',inference:'推断／待核'};
   const reviewNames = {pending:'待复核',confirmed:'确认初核',rejected:'否定初核',amended:'需修改'};
+  let timelineGlow = null, timelineGlowHost = null, timelineGlowGeneration = 0;
+  let timelineGlowStopped = Promise.resolve(), timelineCompletionTransition = null;
   async function api(url, options = {}) {
     const response = await fetch(url, options);
     const data = await response.json().catch(() => ({}));
@@ -123,6 +125,8 @@
   }
   function selectCase(item) {
     if(state.reviewDirty||state.planDirty){closeCasePicker(true);return toast('请先保存复核意见或编排草稿，再切换案件');}
+    stopTimelineGlow();
+    document.body.classList.remove('timeline-progress-active');
     captureEntries();
     if (state.caseId) state.drafts.set(state.caseId, {sources:state.sources,entries:state.entries,draftPath:state.draftPath,draft:$('draft').value,knowledgePosition:$('knowledgePosition').value,knowledgeFocus:$('knowledgeFocus').value,plan:state.plan,pageCounts:state.pageCounts});
     state.factReference=null;state.activeEntry=0;state.pageCounts={};document.body.classList.remove('reviewing-plan');state.caseId = Number(item.id); state.plan=null;state.planDirty=false;$('planPanel').hidden=true;state.sequence++; state.job = null; state.reviewDirty = false;
@@ -151,6 +155,10 @@
     if (parent !== window) parent.postMessage({type:'apex:case-workflow-case-selected',version:1,caseId:state.caseId,caseTitle:item.title || ''}, location.origin);
   }
   function setMode(kind) {
+    if (kind !== 'timeline') {
+      stopTimelineGlow();
+      document.body.classList.remove('timeline-progress-active');
+    }
     captureEntries(); state.kind = kind;state.sequence++;
     const materialMode=kind==='material_analysis';
     const consent=$('ocrConsent').closest('label');consent.hidden=kind==='timeline';if(kind==='timeline')updateTimelineVision();
@@ -368,8 +376,8 @@
     if (!state.caseId) return;
     const id=state.caseId,sequence=++state.sequence;
     try { const data=await api(base(id));if(sequence!==state.sequence||id!==state.caseId)return;state.tasks=data.items;renderTasks();
-      if(state.job&&!state.reviewDirty){const latest=data.items.find(row=>row.id===state.job.id);if(latest){const changed=latest.kind!=='timeline'||latest.status!=='completed'||latest.status!==state.job.status||latest.revision!==state.job.revision;state.job=latest;if(changed)renderDetail();if(latest.kind==='evidence_plan'&&latest.status==='completed'&&state.plan?.id!==latest.id)loadPlan(latest);
-        if (latest.kind === 'timeline' && latest.status === 'completed' && state.locationsJob !== latest.id) {
+      if(state.job&&!state.reviewDirty){const latest=data.items.find(row=>row.id===state.job.id);if(latest){const changed=latest.kind!=='timeline'||latest.status!=='completed'||latest.status!==state.job.status||latest.revision!==state.job.revision;state.job=latest;if(changed&&(latest.kind!=='timeline'||state.kind==='timeline'))renderDetail();if(latest.kind==='evidence_plan'&&latest.status==='completed'&&state.plan?.id!==latest.id)loadPlan(latest);
+        if (state.kind === 'timeline' && latest.kind === 'timeline' && latest.status === 'completed' && state.locationsJob !== latest.id) {
           state.locationsJob=latest.id;
           send(`/api/case-workflows/cases/${id}/timeline-auto`,'POST',{}).then(result => {
             if (state.caseId !== id || state.job?.id !== latest.id || state.kind !== 'timeline') return;
@@ -490,6 +498,7 @@
   window.ApexLifecycle?.onChange(active=>{
     $('filePicker').contentWindow?.postMessage({type:'apex:workflow-visibility',version:1,caseId:state.caseId,active},location.origin);
     if (active) {
+      syncTimelineGlow();
       const timeline = state.kind === 'timeline' && $('detail').querySelector('.timeline-workbench');
       if (timeline && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
         timeline.classList.remove('timeline-animate');
@@ -498,9 +507,9 @@
         timelineAnimationPending = false;
       }
       refresh();
-    } else clearTimeout(state.timer);
+    } else { clearTimeout(state.timer); stopTimelineGlow(); }
   });
-  addEventListener('beforeunload',()=>clearTimeout(state.timer));
+  addEventListener('beforeunload',()=>{clearTimeout(state.timer);stopTimelineGlow();});
   function jobName(row){return {fact_check:'文书事实核对',evidence_plan:'证据编排草案',evidence_book:'证据册',timeline:'案件事实时间轴',knowledge_match:'案件关联知识'}[row.kind]||row.kind;}
   function renderTasks(){ $('tasks').innerHTML=state.tasks.map(row=>`<div class="task-row"><span>${jobName(row)} · ${esc(statusNames[row.status])}<small class="note"> ${esc(displayTime(row.created_at))} · ${row.sources.length}份材料</small></span><button class="button" type="button" data-job="${row.id}">查看</button></div>`).join('')||'<p class="note">尚未交办任务。</p>'; }
   $('tasks').onclick=event=>{const button=event.target.closest('[data-job]');if(!button||state.busy)return;if(state.reviewDirty||state.planDirty)return toast('请先保存复核意见或编排草稿，再切换任务');state.job=state.tasks.find(row=>row.id===button.dataset.job);if(state.job.kind==='knowledge_match')setMode('knowledge_match');else if(state.job.kind==='timeline')setMode('timeline');else if(state.job.kind==='fact_check')setMode('fact_check');else if(state.job.kind==='evidence_book'){$('planPanel').hidden=true;$('inputStage').open=false;}renderDetail();if(state.job.kind==='evidence_plan'&&state.job.status==='completed')loadPlan(state.job);};
@@ -567,6 +576,106 @@
       ${history.length?`<details class="timeline-versions" ${state.timelineVersionsOpen?'open':''}><summary>${icon('chevron')}历史成果版本</summary>${history.map(version=>`<p class="note">第 ${version.revision} 版</p><div class="downloads">${links(version.artifacts,version.revision)}</div>`).join('')}</details>`: ''}
     </details>`;
   }
+  function stopTimelineGlow() {
+    timelineGlowGeneration++;
+    if (timelineGlow) {
+      const glow = timelineGlow;
+      timelineGlow = null;
+      timelineGlowHost = null;
+      timelineGlowStopped = Promise.resolve(glow.finish()).catch(() => {});
+    }
+    return timelineGlowStopped;
+  }
+  function syncTimelineGlow() {
+    const host = $('timelineProgressGlow');
+    const job = state.job;
+    const working = state.kind === 'timeline' && job?.kind === 'timeline'
+      && ['running','queued'].includes(job.status) && !$('detailPanel').hidden
+      && window.ApexLifecycle?.active !== false && document.visibilityState === 'visible';
+    if (!working || !host || typeof startSummaryGenerationGlow !== 'function') {
+      if (timelineGlow) stopTimelineGlow();
+      return;
+    }
+    const label = job.status === 'queued' ? '等待任务开始…' : '正在提炼时间轴…';
+    if (timelineGlow && timelineGlowHost === host) {
+      timelineGlow.setStatus(label);
+      return;
+    }
+    if (timelineGlow) stopTimelineGlow();
+    const generation = ++timelineGlowGeneration;
+    timelineGlowStopped.then(() => {
+      if (generation !== timelineGlowGeneration || !host.isConnected || $('timelineProgressGlow') !== host
+          || $('detailPanel').hidden || state.kind !== 'timeline' || state.job?.id !== job.id
+          || !['running','queued'].includes(state.job?.status) || window.ApexLifecycle?.active === false
+          || document.visibilityState !== 'visible') return;
+      timelineGlow = startSummaryGenerationGlow(host, state.job.status === 'queued' ? '等待任务开始…' : '正在提炼时间轴…', null);
+      timelineGlowHost = host;
+    });
+  }
+  function renderTimelineProgress(job) {
+    let card = $('detail').querySelector('.timeline-progress-card');
+    if (!card || card.dataset.jobId !== String(job.id)) {
+      stopTimelineGlow();
+      $('detail').innerHTML = `<section class="timeline-progress-card" data-job-id="${esc(job.id)}" aria-labelledby="timelineProgressTitle">
+        <header class="timeline-progress-header">
+          <div class="timeline-progress-identity"><span class="workflow-icon-tile">${icon('document')}</span><div><p class="timeline-progress-eyebrow">案件时间轴</p><h2 id="timelineProgressTitle">案件事实时间轴</h2></div></div>
+          <div class="timeline-progress-actions"><span id="timelineProgressStatus" class="timeline-progress-status"></span><button id="cancelJob" class="button" type="button">停止任务</button><button id="resumeJob" class="button" type="button">继续办理</button></div>
+        </header>
+        <div class="timeline-progress-main">
+          <div class="timeline-progress-content">
+            <div class="timeline-progress-heading"><span>当前进度</span><strong id="timelineProgressPercent"></strong></div>
+            <progress id="timelineProgressBar" max="100" aria-label="时间轴提取进度"></progress>
+            <div class="timeline-progress-current" role="status" aria-live="polite"><span class="timeline-progress-current-icon">${icon('document')}</span><div><span class="timeline-progress-current-label">当前办理</span><p id="timelineProgressMessage"></p><p id="timelineProgressFile" hidden></p></div></div>
+          </div>
+          <div id="timelineProgressGlow" class="timeline-progress-glow" aria-hidden="true"></div>
+        </div>
+        <div class="timeline-progress-meta"><div><strong id="timelineProgressSources"></strong><span>材料</span></div><div><strong id="timelineProgressEvents"></strong><span>已保留事件检查点</span></div><div><strong id="timelineProgressRevision"></strong><span>成果版本</span></div></div>
+        <p class="timeline-progress-note">材料版本已固定；原件变化时不会继续办理或打开旧引用。</p>
+        <div id="timelineProgressDownloads" class="timeline-progress-downloads" hidden></div>
+        <details class="timeline-progress-steps"><summary>${icon('chevron')}<span>办理步骤</span><span id="timelineProgressStepCount"></span></summary><ol id="timelineProgressSteps"></ol></details>
+      </section>`;
+      card = $('detail').querySelector('.timeline-progress-card');
+    }
+    updateTimelineProgress(job);
+    syncTimelineGlow();
+  }
+  function updateTimelineProgress(job, keepGlow = false) {
+    const card = $('detail').querySelector('.timeline-progress-card');
+    if (!card || card.dataset.jobId !== String(job.id)) return;
+    const working = ['running','queued'].includes(job.status);
+    card.dataset.status = job.status;
+    $('timelineProgressStatus').textContent = statusNames[job.status] || job.status;
+    $('cancelJob').hidden = !working;
+    $('resumeJob').hidden = !['failed','cancelled','interrupted'].includes(job.status);
+    $('timelineProgressGlow').hidden = !working && !keepGlow;
+    const rawProgress = job.progress;
+    const progress = rawProgress === null || rawProgress === undefined || rawProgress === '' ? NaN : Number(rawProgress);
+    const value = Number.isFinite(progress) ? Math.max(0, Math.min(100, progress)) : null;
+    $('timelineProgressPercent').textContent = value === null ? '—' : `${value}%`;
+    if (value === null) $('timelineProgressBar').removeAttribute('value');
+    else $('timelineProgressBar').value = value;
+    const message = String(job.message || (working ? '等待任务状态更新' : '暂无办理说明'));
+    const reading = message.match(/^(读取材料\s+\d+\s*\/\s*\d+)[：:]\s*([\s\S]+)$/);
+    const updateText = (node, text) => { if (node.textContent !== text) node.textContent = text; };
+    updateText($('timelineProgressMessage'), reading ? reading[1] : message);
+    const file = $('timelineProgressFile');
+    file.hidden = !reading;
+    updateText(file, reading ? reading[2] : '');
+    file.title = reading ? reading[2] : '';
+    $('timelineProgressSources').textContent = String((job.sources || []).length);
+    $('timelineProgressEvents').textContent = String((job.timeline_events || []).length);
+    $('timelineProgressRevision').textContent = String(job.revision ?? '—');
+    const steps = job.steps || [];
+    $('timelineProgressStepCount').textContent = steps.length ? `${steps.length} 条` : '';
+    const stepHtml = steps.map(step => `<li><time>${esc(displayTime(step.at))}</time><span>${esc(step.message)}</span></li>`).join('') || '<li class="note">暂无办理步骤</li>';
+    if ($('timelineProgressSteps').innerHTML !== stepHtml) $('timelineProgressSteps').innerHTML = stepHtml;
+    const links = artifactLinks(job, job.revision, job.artifacts || []);
+    const versions = job.versions?.length > 1 ? `<details><summary>历史成果版本</summary>${job.versions.slice(0,-1).map(version=>`<p>第 ${esc(version.revision)} 版</p><div class="downloads">${artifactLinks(job,version.revision,version.artifacts || [])}</div>`).join('')}</details>` : '';
+    const downloads = $('timelineProgressDownloads');
+    const downloadHtml = links ? `<div class="downloads">${links}</div>${versions}` : versions;
+    if (downloads.innerHTML !== downloadHtml) downloads.innerHTML = downloadHtml;
+    downloads.hidden = !downloadHtml;
+  }
   function renderDetail(){
     const previousDelivery = $('timelineDelivery');
     const job = state.job;
@@ -574,6 +683,19 @@
     const existingReview = $('detail').querySelector('.timeline-editor:not([hidden])');
     const previousReviewScroll = existingReview?.querySelector('.timeline-review-body').scrollTop || 0;
     const completed = job.kind === 'timeline' && job.status === 'completed';
+    if (completed && timelineCompletionTransition?.caseId === state.caseId && timelineCompletionTransition.jobId === job.id) return;
+    const progressCard = $('detail').querySelector('.timeline-progress-card');
+    if (completed && progressCard?.dataset.jobId === String(job.id) && timelineGlow && window.ApexLifecycle?.active !== false) {
+      updateTimelineProgress(job, true);
+      const transition = {caseId:state.caseId, jobId:job.id};
+      timelineCompletionTransition = transition;
+      stopTimelineGlow().then(() => {
+        if (timelineCompletionTransition !== transition) return;
+        timelineCompletionTransition = null;
+        if (state.caseId === transition.caseId && state.job?.id === transition.jobId && state.job.status === 'completed' && state.kind === 'timeline') renderDetail();
+      });
+      return;
+    }
     if (completed && timelineJob !== job.id) {
       state.timelineDeliveryOpen = false;
       state.exportPreviewOpen = true;
@@ -585,8 +707,9 @@
       state.exportPreviewOpen = previousDelivery.querySelector('.export-preview').open;
       state.timelineVersionsOpen = previousDelivery.querySelector('.timeline-versions')?.open;
     }
-    $('detailPanel').hidden=false;$('detailPanel').classList.toggle('is-delivered',job.status==='completed');document.body.classList.toggle('reviewing-result',job.status==='completed');if(job.status==='completed'&&$('detailPanel').dataset.deliveredJob!==job.id){$('inputStage').open=false;$('detailPanel').dataset.deliveredJob=job.id;}
+    $('detailPanel').hidden=false;$('detailPanel').classList.toggle('is-delivered',job.status==='completed');document.body.classList.toggle('reviewing-result',job.status==='completed');document.body.classList.toggle('timeline-progress-active',job.kind==='timeline'&&!completed&&state.kind==='timeline');if(job.status==='completed'&&$('detailPanel').dataset.deliveredJob!==job.id){$('inputStage').open=false;$('detailPanel').dataset.deliveredJob=job.id;}
     if (completed) {
+      stopTimelineGlow();
       const visible = visibleTimelineEvents(job.timeline_events || []);
       $('detail').innerHTML = renderTimeline(job, visible) + renderTimelineDelivery(job, timelineFilter === 'excluded' ? 0 : visible.length);
       if (visible.length && window.ApexLifecycle?.active !== false) timelineAnimationPending = false;
@@ -595,9 +718,10 @@
       loadExportPreview();
       syncTimelinePosition();
       requestAnimationFrame(() => window.dispatchEvent(new Event('scroll')));
-    } else renderOtherJob(job);
+    } else if (job.kind === 'timeline') renderTimelineProgress(job);
+    else { stopTimelineGlow(); renderOtherJob(job); }
     syncTimelineToolbar();
-    if(state.busy)$('detail').querySelectorAll('input,textarea,button').forEach(el=>{el.dataset.busyDisabled=String(el.disabled);el.disabled=true;});
+    if(state.busy)$('detail').querySelectorAll('input,textarea,button').forEach(el=>{if(el.dataset.busyDisabled===undefined)el.dataset.busyDisabled=String(el.disabled);el.disabled=true;});
   }
   function renderOtherJob(job) {
     $('timelineTopFilters').replaceChildren();

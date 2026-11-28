@@ -331,6 +331,77 @@ html.dark-mode, html[data-theme="dark"] {
 
 /* Chronology and event review. */
 .timeline-mode #detailPanel { padding: 0; background: transparent; border: 0; box-shadow: none; }
+/* Timeline extraction keeps the live progress and actions outside the glow. */
+.timeline-progress-card, .timeline-progress-active .history-panel { width: min(100%, 1040px); margin-inline: auto; }
+.timeline-progress-active #work > .history-panel { margin-inline: auto; }
+.timeline-progress-card { overflow: hidden; border: 1px solid var(--apex-border-subtle); border-radius: var(--apex-radius-xl); background: var(--apex-surface-solid); box-shadow: var(--apex-shadow-sm); }
+.timeline-progress-header { align-items: center; padding: var(--apex-space-5) var(--apex-space-6); border-bottom: 1px solid var(--apex-border-subtle); }
+.timeline-progress-identity, .timeline-progress-actions { display: flex; align-items: center; gap: var(--apex-space-3); min-width: 0; }
+.timeline-progress-identity > div { min-width: 0; }
+.timeline-progress-identity .workflow-icon-tile { width: 42px; height: 42px; }
+.timeline-progress-eyebrow { margin: 0 0 var(--apex-space-1); color: var(--apex-text-secondary); font-size: 11px; }
+.timeline-progress-header h2 { margin: 0; font-size: 18px; line-height: 1.35; }
+.timeline-progress-actions { flex: none; }
+.timeline-progress-actions .button { white-space: nowrap; }
+.timeline-progress-status { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: var(--apex-radius-lg); background: var(--workflow-picked); color: var(--workflow-accent); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.timeline-progress-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.timeline-progress-card[data-status="failed"] .timeline-progress-status, .timeline-progress-card[data-status="interrupted"] .timeline-progress-status { color: var(--apex-danger); }
+.timeline-progress-card[data-status="cancelled"] .timeline-progress-status { color: var(--apex-text-secondary); background: var(--apex-surface-muted); }
+.timeline-progress-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 34%); gap: var(--apex-space-6); align-items: stretch; padding: var(--apex-space-6); }
+.timeline-progress-card[data-status="failed"] .timeline-progress-main, .timeline-progress-card[data-status="cancelled"] .timeline-progress-main, .timeline-progress-card[data-status="interrupted"] .timeline-progress-main { grid-template-columns: minmax(0, 1fr); }
+.timeline-progress-content { min-width: 0; align-self: center; }
+.timeline-progress-heading { display: flex; justify-content: space-between; align-items: baseline; gap: var(--apex-space-3); color: var(--apex-text-secondary); font-size: 13px; }
+.timeline-progress-heading strong { color: var(--apex-text); font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.timeline-progress-content progress { display: block; width: 100%; height: 7px; margin: var(--apex-space-3) 0 var(--apex-space-5); border: 0; border-radius: var(--apex-radius-lg); overflow: hidden; appearance: none; -webkit-appearance: none; background: var(--apex-surface-muted); }
+.timeline-progress-content progress::-webkit-progress-bar { border-radius: inherit; background: var(--apex-surface-muted); }
+.timeline-progress-content progress::-webkit-progress-value { border-radius: inherit; background: var(--workflow-accent); transition: width var(--apex-duration-normal) var(--apex-ease); }
+.timeline-progress-content progress::-moz-progress-bar { border-radius: inherit; background: var(--workflow-accent); }
+.timeline-progress-current { display: flex; gap: var(--apex-space-3); min-width: 0; padding: var(--apex-space-3); border-radius: var(--apex-radius-md); background: var(--apex-surface-muted); }
+.timeline-progress-current-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: var(--apex-radius-sm); background: var(--apex-surface-solid); color: var(--apex-text-secondary); }
+.timeline-progress-current > div { min-width: 0; }
+.timeline-progress-current-label { color: var(--apex-text-secondary); font-size: 11px; }
+.timeline-progress-current p { margin: 4px 0 0; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+#timelineProgressMessage { font-weight: 600; }
+#timelineProgressFile { color: var(--apex-text-secondary); }
+.timeline-progress-glow { position: relative; isolation: isolate; min-width: 0; min-height: 180px; overflow: hidden; border: 1px solid var(--apex-border-subtle); border-radius: var(--apex-radius-lg); background: var(--apex-surface-muted); }
+.timeline-progress-glow .summary-glow-status { padding: var(--apex-space-3); font-size: 13px; }
+.timeline-progress-glow .summary-glow-copy { min-width: 0; }
+.timeline-progress-glow .summary-glow-old { white-space: normal; }
+html.dark-mode .timeline-progress-glow .summary-glow-veil, html[data-theme="dark"] .timeline-progress-glow .summary-glow-veil { background: var(--apex-surface-solid); }
+html.dark-mode .timeline-progress-glow .summary-glow-text, html[data-theme="dark"] .timeline-progress-glow .summary-glow-text { background-image: linear-gradient(100deg,#ddd 0%,#ddd 37%,#fff 49%,#ddd 61%,#ddd 100%); }
+html.dark-mode .timeline-progress-glow .summary-glow-old, html[data-theme="dark"] .timeline-progress-glow .summary-glow-old { color: #ddd; }
+html.dark-mode .timeline-progress-glow .summary-glow-spinner::after, html[data-theme="dark"] .timeline-progress-glow .summary-glow-spinner::after { border-top-color: #ddd; border-left-color: #ddd; }
+.timeline-progress-meta { display: flex; flex-wrap: wrap; gap: var(--apex-space-4) var(--apex-space-6); padding: 0 var(--apex-space-6); }
+.timeline-progress-meta > div { display: flex; align-items: baseline; gap: 6px; color: var(--apex-text-secondary); font-size: 12px; }
+.timeline-progress-meta strong { color: var(--apex-text); font-size: 14px; font-variant-numeric: tabular-nums; }
+.timeline-progress-note { margin: var(--apex-space-3) var(--apex-space-6) var(--apex-space-5); color: var(--apex-text-secondary); font-size: 12px; line-height: 1.6; }
+.timeline-progress-downloads { margin: 0 var(--apex-space-6) var(--apex-space-4); }
+.timeline-progress-steps { border-top: 1px solid var(--apex-border-subtle); }
+.timeline-progress-steps > summary { display: flex; align-items: center; gap: var(--apex-space-2); padding: var(--apex-space-4) var(--apex-space-6); color: var(--apex-text); font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
+.timeline-progress-steps > summary::-webkit-details-marker { display: none; }
+.timeline-progress-steps > summary:focus-visible { outline: 2px solid var(--apex-accent); outline-offset: -3px; }
+.timeline-progress-steps > summary .workflow-icon { color: var(--apex-text-secondary); transition: transform var(--apex-duration-normal) var(--apex-ease); }
+.timeline-progress-steps[open] > summary .workflow-icon { transform: rotate(90deg); }
+#timelineProgressStepCount { margin-left: auto; color: var(--apex-text-secondary); font-size: 12px; font-weight: 400; }
+#timelineProgressSteps { display: grid; gap: var(--apex-space-3); max-height: 250px; overflow: auto; margin: 0; padding: 0 var(--apex-space-6) var(--apex-space-5); list-style: none; }
+#timelineProgressSteps li { display: grid; grid-template-columns: 145px minmax(0, 1fr); gap: var(--apex-space-3); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+#timelineProgressSteps time { color: var(--apex-text-secondary); font-variant-numeric: tabular-nums; }
+@media (max-width: 720px) {
+  .timeline-progress-header { flex-wrap: wrap; gap: var(--apex-space-3); padding: var(--apex-space-4); }
+  .timeline-progress-actions { width: 100%; justify-content: space-between; }
+  .timeline-progress-main { grid-template-columns: minmax(0, 1fr); gap: var(--apex-space-4); padding: var(--apex-space-4); }
+  .timeline-progress-glow { min-height: 130px; }
+  .timeline-progress-meta { padding-inline: var(--apex-space-4); }
+  .timeline-progress-note { margin-inline: var(--apex-space-4); }
+  .timeline-progress-downloads { margin-inline: var(--apex-space-4); }
+  .timeline-progress-steps > summary { padding-inline: var(--apex-space-4); }
+  #timelineProgressSteps { padding-inline: var(--apex-space-4); }
+  #timelineProgressSteps li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .timeline-progress-content progress::-webkit-progress-value, .timeline-progress-steps > summary .workflow-icon { transition: none; }
+  html.dark-mode .timeline-progress-glow .summary-glow-text, html[data-theme="dark"] .timeline-progress-glow .summary-glow-text { background: none; color: var(--apex-text); }
+}
 .timeline-workbench { display: grid; grid-template-columns: var(--workflow-case-rail) minmax(0, 1fr); gap: var(--apex-space-4) var(--workflow-case-gap); align-items: start; }
 .timeline-workbench:has(.timeline-list:not(.is-empty)) { min-height: calc(100dvh - var(--workflow-context-offset, 120px) - var(--apex-space-4)); }
 .timeline-filter-note, .timeline-coverage { grid-column: 1/-1; }
