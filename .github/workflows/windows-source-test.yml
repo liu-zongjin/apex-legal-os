@@ -78,7 +78,9 @@ jobs:
               $stop = $stopJson | ConvertFrom-Json
               Start-Process -FilePath $stop.target -ArgumentList $stop.arguments -WorkingDirectory $stop.root -Wait
               if (-not $process.WaitForExit(30000)) { throw 'Stop shortcut did not shut down Stella' }
-              if ($process.ExitCode -ne 0) { throw 'Stella did not shut down cleanly' }
+              $process.Refresh()
+              if ($null -ne $process.ExitCode -and $process.ExitCode -ne 0) { throw ('Stella exited with code ' + $process.ExitCode) }
+              if (-not (Select-String -LiteralPath $err -Pattern 'Application shutdown complete' -SimpleMatch)) { throw 'Stella did not complete application shutdown' }
             } finally {
               Get-Content $out,$err -ErrorAction SilentlyContinue
               if (-not $process.HasExited) { taskkill /PID $process.Id /T /F }
