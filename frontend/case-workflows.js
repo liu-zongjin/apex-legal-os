@@ -129,7 +129,7 @@
       : state.kind === 'fact_check'
       ? [{code:'draft',name:'核对这份文书的事实',description:'起诉状、申请书、答辩状等 · 选一份'}, {code:'source',name:'用这些材料核对文书',description:'合同、付款凭证、往来记录等 · 可多选'}]
       : [{code:'draft',name:'按这份定稿文书编排',description:'定稿起诉状、申请书、答辩状等 · 选一份'}, {code:'source',name:'把这些材料列为候选证据',description:'审阅后决定编册内容与选页 · 可多选'}];
-    $('filePicker').contentWindow?.postMessage({type:'apex:workflow-status',version:1,caseId:state.caseId,statuses:{},categories:roles,allowFolders:state.kind==='timeline'}, location.origin);
+    $('filePicker').contentWindow?.postMessage({type:'apex:workflow-status',version:1,caseId:state.caseId,statuses:{},categories:roles,allowFolders:state.kind==='timeline',analyzedPaths:state.kind==='timeline'&&state.job?.kind==='timeline'&&state.job.status==='completed'?state.job.sources.map(row=>row.path):[]}, location.origin);
   }
   addEventListener('message', event => {
     if (event.origin !== location.origin || event.source !== $('filePicker').contentWindow || event.data?.version !== 1 || Number(event.data.caseId) !== state.caseId) return;

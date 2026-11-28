@@ -325,6 +325,21 @@ def run(output):
                 notice=page.locator('#timelineDuplicateNotice')
                 notice.wait_for()
                 assert '已分析过' in notice.inner_text() and '01_合同.pdf' in notice.inner_text()
+                assert frame.locator('#hideAnalyzedControl').is_visible()
+                frame.locator('#hideAnalyzed').check()
+                frame.locator('.file-row').filter(has_text='01_合同.pdf').wait_for(state='detached')
+                assert frame.locator('.file-row').filter(has_text='03_草稿.txt').is_visible()
+                notice.wait_for(state='hidden')
+                width=frame.locator('.column').last.bounding_box()['width']
+                area=frame.locator('#workspace').bounding_box()['width']
+                assert width>=area-3, (width,area)
+                frame.locator('#fileSearch').fill('01_合同')
+                frame.locator('.search-head').wait_for()
+                assert frame.locator('.search-row').count()==0
+                frame.locator('#hideAnalyzed').uncheck()
+                frame.locator('.search-row').filter(has_text='01_合同.pdf').wait_for()
+                frame.locator('#fileSearch').fill('')
+                frame.locator('.file-row').filter(has_text='03_草稿.txt').wait_for()
                 frame.locator('.file-row').filter(has_text='03_草稿.txt').click()
                 notice.wait_for(state="hidden")
                 box=page.locator('.work-grid').bounding_box();picker=page.locator('#filePicker').bounding_box();submit=page.locator('#submit').bounding_box()
