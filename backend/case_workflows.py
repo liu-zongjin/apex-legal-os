@@ -432,6 +432,7 @@ class CaseWorkflowService:
             job['parent_revision'] = parent_timeline['revision']
             job['inherited_paths'] = [item['path'] for item in parent_timeline['sources']]
             job['timeline_events'] = json.loads(json.dumps(parent_timeline.get('timeline_events', []), ensure_ascii=False))
+            job['timeline_purged_ids'] = list(parent_timeline.get('timeline_purged_ids', []))
             job['timeline_conflicts'] = json.loads(json.dumps(parent_timeline.get('timeline_conflicts', []), ensure_ascii=False))
             job['timeline_rejections'] = int(parent_timeline.get('timeline_rejections', 0))
         if owner_task:
@@ -840,7 +841,8 @@ class CaseWorkflowService:
             rejected=0
             for proposal in rows:
                 row=grounded_event(proposal,batch)
-                if row:events.setdefault(row['id'],row)
+                if row:
+                    if row['id'] not in job.get('timeline_purged_ids', []): events.setdefault(row['id'],row)
                 else:rejected+=1
             if len(events)>MAX_EVENTS:raise HTTPException(413,'超过300项事件，请分组整理，不会静默截断')
             job['timeline_events']=ordered(list(events.values()))
@@ -1536,6 +1538,51 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                     shutil.rmtree(folder,ignore_errors=True);raise
                 return job
         return public_job(await _run_in_thread(save_review))
+
+    @app.post('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-purge')
+    async def purge_timeline_events(case_id: int, job_id: str, request: Request):
+        require_action(request)
+        body = await request.json()
+        ids = body.get('event_ids') if isinstance(body, dict) else None
+        if (not isinstance(body, dict) or not isinstance(body.get('revision'), int)
+                or isinstance(body.get('revision'), bool) or not isinstance(ids, list)
+                or not ids or len(ids) > 300 or any(not isinstance(item, str) or not item or len(item) > 128 for item in ids)
+                or len(set(ids)) != len(ids)):
+            raise HTTPException(422, '请选择要彻底删除的事件')
+        def purge():
+            from .case_timeline import artifacts
+            with service.lock:
+                root, job = service.load(case_id, job_id)
+                if job.get('kind') != 'timeline' or job.get('status') != 'completed' or job['revision'] != body['revision']:
+                    raise HTTPException(409, '时间轴已变化，请重新载入后再删除')
+                selected = set(ids)
+                rows = [row for row in job['timeline_events'] if row['id'] in selected]
+                if len(rows) != len(selected):
+                    raise HTTPException(404, '部分事件不存在，请重新载入')
+                if any(row.get('review_status') != 'excluded' for row in rows):
+                    raise HTTPException(409, '请先将事件移至已删除，再彻底删除')
+                job['timeline_events'] = [row for row in job['timeline_events'] if row['id'] not in selected]
+                job['timeline_purged_ids'] = list(dict.fromkeys(job.get('timeline_purged_ids', []) + ids))
+                job['timeline_conflicts'] = [
+                    {**issue, 'event_ids': [item for item in issue.get('event_ids', []) if item not in selected]}
+                    for issue in job.get('timeline_conflicts', [])
+                    if len([item for item in issue.get('event_ids', []) if item not in selected]) >= 2
+                ]
+                job['revision'] += 1
+                folder = service.directory(root, job_id) / ('v' + str(job['revision']) + '-' + uuid.uuid4().hex[:8])
+                folder.mkdir()
+                try:
+                    if job['claims']: service.fact_artifacts(job, folder)
+                    artifacts(job, folder)
+                    if service.root(case_id) != root: raise HTTPException(409, '案件文件夹绑定已变化')
+                    job['artifacts'] = [{'name': path.name, 'path': str(path.relative_to(service.directory(root, job_id))), 'sha256': digest(path)} for path in sorted(folder.iterdir())]
+                    job['versions'].append({'revision': job['revision'], 'artifacts': job['artifacts'], 'at': stamp()})
+                    service.save(root, job)
+                except Exception:
+                    shutil.rmtree(folder, ignore_errors=True)
+                    raise
+                return public_job(job)
+        return await _run_in_thread(purge)
 
     @app.post('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-export-pdf')
     async def export_timeline_pdf(case_id: int, job_id: str, request: Request):

@@ -2298,6 +2298,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-purge",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "POST",
       "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-select-file",
       "source": "backend/case_workflows.py"
     },

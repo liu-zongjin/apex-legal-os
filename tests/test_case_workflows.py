@@ -553,6 +553,65 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(page.headers['content-type'],'image/png')
         self.assertEqual(self.client.get(prefix+'/material-page',params=query).status_code,403)
 
+    def test_timeline_purge_removes_excluded_events_and_preserves_other_records(self):
+        (self.root/'另外.txt').write_text('乙于2026年3月支付款项。',encoding='utf-8')
+        job=self.done(self.create({'kind':'timeline','paths':['合同.txt','另外.txt']}).json())
+        self.assertEqual(job['status'],'completed',job)
+        self.assertEqual(len(job['timeline_events']),2)
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        first,second=job['timeline_events']
+        # A permanent delete must never silently remove active or unknown events.
+        self.assertEqual(self.client.post(prefix+'/timeline-purge',json={'revision':1,'event_ids':[first['id']]}).status_code,409)
+        self.assertEqual(self.client.post(prefix+'/timeline-purge',json={'revision':1,'event_ids':['missing']}).status_code,404)
+        self.assertEqual(self.client.post(prefix+'/timeline-purge',json={'revision':1,'event_ids':[first['id'],first['id']]}).status_code,422)
+        updates=[{'id':row['id'],'status':'excluded' if row['id']==first['id'] else 'confirmed','note':'手动移出' if row['id']==first['id'] else ''} for row in job['timeline_events']]
+        deleted=self.client.put(prefix+'/timeline',json={'revision':1,'events':updates})
+        self.assertEqual(deleted.status_code,200,deleted.text)
+        saved=deleted.json();self.assertEqual(saved['revision'],2)
+        removed=next(row for row in saved['timeline_events'] if row['id']==first['id'])
+        self.assertEqual(removed['before_delete_status'],first['review_status'])
+        self.assertEqual(self.client.post(prefix+'/timeline-purge',json={'revision':1,'event_ids':[first['id']]}).status_code,409)
+        # Purging remains possible when the original file has since moved or changed.
+        (self.root/'合同.txt').write_text('原件已有变化',encoding='utf-8')
+        result=self.client.post(prefix+'/timeline-purge',json={'revision':2,'event_ids':[first['id']]})
+        self.assertEqual(result.status_code,200,result.text)
+        purged=result.json();self.assertEqual(purged['revision'],3)
+        self.assertEqual([row['id'] for row in purged['timeline_events']],[second['id']])
+        self.assertIn(first['id'],purged['timeline_purged_ids'])
+        self.assertNotIn(first['id'],[event_id for issue in purged['timeline_issues'] for event_id in issue.get('event_ids',[])])
+        self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':first['id']}).status_code,404)
+        audit=next(item for item in purged['artifacts'] if item['name']=='时间轴核验底稿.json')
+        path=self.service.directory(self.root,job['id'])/audit['path']
+        self.assertNotIn(first['id'],path.read_text(encoding='utf-8'))
+        self.assertEqual(self.client.get(prefix+'/artifacts/0?revision=1').status_code,200)  # prior exports remain immutable
+        self.assertEqual(self.client.post(prefix+'/timeline-purge',json={'revision':3,'event_ids':[first['id']]}).status_code,404)
+        # New material added later inherits the permanent-deletion IDs.
+        (self.root/'合同.txt').write_text('合同约定价款10000元。付款日为2026年1月1日。',encoding='utf-8')
+        (self.root/'新增.txt').write_text('丙于2026年4月提交材料。',encoding='utf-8')
+        child=self.create({'kind':'timeline','paths':['新增.txt'],'parent_timeline_id':job['id'],'parent_revision':purged['revision']})
+        self.assertEqual(child.status_code,200,child.text)
+        child=self.done(child.json())
+        self.assertEqual(child['status'],'completed',child)
+        self.assertIn(first['id'],child['timeline_purged_ids'])
+        self.assertNotIn(first['id'],[row['id'] for row in child['timeline_events']])
+
+    def test_timeline_purge_last_event_and_restore_metadata(self):
+        job=self.done(self.create({'kind':'timeline','paths':['合同.txt']}).json())
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        row=job['timeline_events'][0]
+        confirmed=self.client.put(prefix+'/timeline',json={'revision':1,'events':[{'id':row['id'],'status':'confirmed','note':'已查看原文'}]}).json()
+        deleted=self.client.put(prefix+'/timeline',json={'revision':2,'events':[{'id':row['id'],'status':'excluded','note':'用户移除'}]}).json()
+        self.assertEqual(deleted['timeline_events'][0]['before_delete_status'],'confirmed')
+        self.assertEqual(deleted['timeline_events'][0]['before_delete_note'],'已查看原文')
+        restored=self.client.put(prefix+'/timeline',json={'revision':3,'events':[{'id':row['id'],'status':'confirmed','note':'已查看原文'}]})
+        self.assertEqual(restored.status_code,200,restored.text)
+        self.assertNotIn('before_delete_status',restored.json()['timeline_events'][0])
+        deleted=self.client.put(prefix+'/timeline',json={'revision':4,'events':[{'id':row['id'],'status':'excluded','note':'用户移除'}]}).json()
+        purged=self.client.post(prefix+'/timeline-purge',json={'revision':5,'event_ids':[row['id']]})
+        self.assertEqual(purged.status_code,200,purged.text)
+        self.assertEqual(purged.json()['timeline_events'],[])
+        self.assertEqual(len(purged.json()['artifacts']),6)
+
     def test_timeline_reference_document_and_changed_source_during_export(self):
         from unittest.mock import patch
         from backend.case_timeline import artifacts
