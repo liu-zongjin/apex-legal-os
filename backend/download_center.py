@@ -521,13 +521,14 @@ def register_download_center_routes(app, get_db):
         path = trusted_file(item)
         if path.stat().st_size > MAX_BYTES: raise HTTPException(413,'文件超过 500MB')
         metadata = {'download_id':identity,'source':item['source']}
+        category = 'ai_answer' if item.get('category') == 'ai' and body.get('purpose') == 'ai_answer' else 'download_material'
         is_staged_mail = item.get('category') == 'mail' and not item.get('case_saved')
         if is_staged_mail:
             result = await in_thread(save_mail_case_file, info['case_id'], 'download_material',
                                      item['name'], item.get('created_at'), path,
                                      source_type='download_center', metadata=metadata)
         else:
-            result = await in_thread(lambda: store_case_file(get_db, info['case_id'], 'download_material',
+            result = await in_thread(lambda: store_case_file(get_db, info['case_id'], category,
                                          filename(item['name']), path.read_bytes(),
                                          source_type='download_center', metadata=metadata))
         final_path = result['absolute_path']

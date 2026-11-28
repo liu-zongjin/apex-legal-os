@@ -41,21 +41,15 @@
   async function init() {
     if (initialized) return;
     try { const response=await fetch('/api/source-statistics'); if(response.ok) sourceMode=(await response.json()).enabled===true; } catch {}
-    const platform = await window.StellaPlatformReady?.catch(() => null);
-    const windows = Boolean(window.StellaWindows) || platform?.platform === 'windows';
+    await window.StellaPlatformReady?.catch(() => null);
     if (initialized || (!sourceMode && !window.StellaWindows)) return;
-    const host = document.querySelector(windows ? '#settings-section-support' : '.tab-bar-actions');
+    const host = document.querySelector('#settings-section-support');
     if (!host) return;
     initialized = true;
     button = document.createElement('button'); button.type = 'button';
-    if (windows) {
-      button.id = 'stella-windows-statistics-settings';
-      button.className = 'settings-list-item';
-      button.innerHTML = '<span class="settings-list-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 15v-4m6 4V5m6 10V8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><span class="settings-list-copy"><strong>基础使用统计</strong></span><span class="settings-list-arrow" aria-hidden="true">›</span>';
-    } else {
-      button.className = 'tab-bar-action-btn';
-      button.textContent = '使用统计';
-    }
+    button.id = 'stella-windows-statistics-settings';
+    button.className = 'settings-list-item';
+    button.innerHTML = '<span class="settings-list-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 15v-4m6 4V5m6 10V8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><span class="settings-list-copy"><strong>基础使用统计</strong></span><span class="settings-list-arrow" aria-hidden="true">›</span>';
     button.setAttribute('aria-haspopup', 'dialog');
     button.title = '查看或关闭基础使用统计'; host.append(button);
     async function read(manual) {

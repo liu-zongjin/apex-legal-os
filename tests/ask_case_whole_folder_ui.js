@@ -11,9 +11,12 @@ const declarations=names.map(name=>{const n=tree.body.find(n=>n.type==='Function
   return route.fulfill({json:{}});
  });
  await page.goto('http://fixture.test/');
+ await page.addStyleTag({path:'frontend/style.css'});
  await page.addScriptTag({content:`let askContext=null,askCaseFilePickerState={cases:[{id:7,title:'匿名案件'}],caseItem:null,items:[],selected:new Map(),wholeCase:false,searchResults:[],treeChildren:new Map(),treeExpanded:new Set(),treeLoading:new Set(),folderTags:new Map()};const DEFAULT_AI_ASK_MODEL='deepseek-flash',TAB_TYPES={AI_ASK:'ai'},tabState={tabs:[]};let ApexCasePicker={get:()=>null};function escapeHtml(v){let e=document.createElement('span');e.textContent=String(v||'');return e.innerHTML}function renderFinderTagDots(){return ''}function renderFinderFolderIcon(){return ''}function showToast(){}function applyAskFilesContext(x){window.lastFiles=x;return true}function syncAskSourceModeFromSources(){}function startFreshAskConversation(){}function closeAskCaseFilePicker(){}function _updateAskContextBar(){}function updateAskSourceModeUI(){}function renderAskSelectedFiles(){}function renderAskHistory(){} function askCurrentFilesContext(){return window.lastFiles}function confirmArticleTrashAction(){throw Error('视觉模型不应请求OCR授权')}\n`+declarations});
  await page.evaluate(()=>{ensureAskCaseFilePicker();document.getElementById('ask-case-file-picker').classList.add('open')});
+ assert.equal(await page.locator('#ask-case-file-whole-row').isVisible(),false);
  await page.evaluate(()=>selectAskCaseForFiles(7));
+ const row=await page.locator('#ask-case-file-whole-row').boundingBox();assert(row.height<100 && row.width>300);
  await page.locator('#ask-case-file-whole').check();assert.equal(await page.locator('#ask-case-file-picker-count').innerText(),'已选择整个案件文件夹');
  await page.locator('#ask-case-file-picker-confirm').click();await page.waitForFunction(()=>window.lastFiles);
  assert.deepEqual(request.paths,['__CASE_ROOT__']);assert.equal(request.model,'deepseek-flash');assert.equal(request.allow_cloud_ocr,false);

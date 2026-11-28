@@ -36,6 +36,14 @@ def main():
         for theme in ('light','dark'):
             page.emulate_media(color_scheme=theme);page.evaluate('(theme)=>document.documentElement.dataset.theme=theme',theme)
             page.screenshot(path=str(args.output/f'windows-statistics-{theme}.png'))
+        source=browser.new_page();source.set_content(HOST)
+        source.add_script_tag(content="window.fetch=async()=>({ok:true,json:async()=>({enabled:true,allowed:true})})")
+        source.add_script_tag(content=SCRIPT)
+        source.get_by_role('button', name='基础使用统计', exact=True).wait_for()
+        assert source.locator('.tab-bar-actions button').count() == 0
+        assert source.locator('#settings-section-support button').count() == 1
+        source.get_by_role('button', name='基础使用统计', exact=True).click()
+        source.get_by_role('dialog').wait_for()
         other=browser.new_page();other.set_content(HOST);other.add_script_tag(content=SCRIPT)
         assert other.locator('button').count()==0
         browser.close()

@@ -178,7 +178,97 @@ class AutoTimelineTests(unittest.TestCase):
             response=self.client.get(f'/api/case-workflows/cases/1/tasks/{job["id"]}/material-preview',params={'path':path.name,'event_id':job['timeline_events'][0]['id']})
         self.assertEqual(response.status_code,200,response.text)
         self.assertIn('第1段',response.text)
-        self.assertIn('2026年1月1日甲公司付款',response.text)
+        self.assertIn('<mark>2026年1月1日甲公司付款。</mark>',response.text)
+
+    def test_word_preview_locates_a_citation_across_table_cells(self):
+        from bs4 import BeautifulSoup
+        from backend.file_text import read_docx
+
+        path = self.root/'被告答辩状.docx'
+        document = Document()
+        document.add_paragraph('匿名答辩材料')
+        table = document.add_table(rows=3, cols=3)
+        for row, values in zip(table.rows, [
+            ('日期', '金额', '用途'),
+            ('2026年1月1日', '112550', '购房款 & 尾款'),
+            ('2026年1月1日', '１２，５５０', '购房款 & 尾款'),
+        ]):
+            for cell, value in zip(row.cells, values):
+                cell.text = value
+        document.add_paragraph('凭证附后')
+        document.save(path)
+        self.assertEqual(read_docx(path),
+                         '匿名答辩材料\n\n日期\t金额\t用途\n\n2026年1月1日\t112550\t购房款 & 尾款'
+                         '\n\n2026年1月1日\t１２，５５０\t购房款 & 尾款\n\n凭证附后')
+        self.service.parse = AsyncMock(return_value={'content':'2026年1月1日\t12550\t购房款 & 尾款'})
+        endpoint = '/api/case-workflows/cases/1'
+        job = self.done(self.client.post(endpoint+'/timeline-auto',json={}).json()['job'])
+        event = job['timeline_events'][0]
+        context = self.client.post(endpoint+'/timeline-auto',json={}).json()
+        self.assertEqual(context['word_locations'], {event['id']:'Word 第1表第3行'})
+        response = self.client.get(f'{endpoint}/tasks/{job["id"]}/material-preview',
+                                   params={'path':path.name,'event_id':event['id']})
+        self.assertEqual(response.status_code,200,response.text)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        self.assertEqual(soup.select_one('#textSummary')['data-location'], 'Word 第1表第3行')
+        self.assertEqual([node.text for node in soup.select('tr.match mark')],
+                         ['2026年1月1日', '１２，５５０', '购房款 & 尾款'])
+        self.assertEqual([node.text for node in soup.select('.text-paper section p')],
+                         ['匿名答辩材料', '凭证附后'])
+        self.assertEqual(len(soup.select('mark')), 3)
+
+    def test_pdf_citation_highlight_preserves_the_original(self):
+        import fitz
+
+        path = self.root/'被告答辩状.pdf'
+        with fitz.open() as document:
+            page = document.new_page()
+            page.insert_text((60, 550), 'Receipt 12,550', fontsize=16)
+            document.save(path)
+        original = path.read_bytes()
+        self.service.parse = AsyncMock(return_value={'content':'【第 1 页】\nReceipt 12550'})
+        prefix = '/api/case-workflows/cases/1'
+        job = self.done(self.client.post(prefix+'/timeline-auto',json={}).json()['job'])
+        url = f'{prefix}/tasks/{job["id"]}/material-page'
+        plain = self.client.get(url, params={'path':path.name})
+        marked = self.client.get(url, params={'path':path.name,'event_id':job['timeline_events'][0]['id']})
+        self.assertEqual(marked.status_code,200,marked.text if marked.status_code != 200 else '')
+        self.assertGreater(float(marked.headers['x-stella-citation-y']), .5)
+        self.assertNotEqual(marked.content, plain.content)
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_party_subject_is_saved_through_review_and_can_be_cleared(self):
+        path = self.root/'被告答辩状.docx'
+        document = Document()
+        document.add_paragraph('2026年1月1日收到款项。')
+        document.save(path)
+        self.service.parse = AsyncMock(return_value={'content':'2026年1月1日收到款项。'})
+        prefix = '/api/case-workflows/cases/1'
+        result = self.client.post(prefix+'/timeline-auto',json={}).json()
+        self.assertEqual(result['party_subjects']['被告方'],'乙公司')
+        job = self.done(result['job'])
+        event, = job['timeline_events']
+        self.assertEqual(event['actors'], '')
+        url = f'{prefix}/tasks/{job["id"]}/timeline'
+
+        def review(revision, **changes):
+            return self.client.put(url,json={'revision':revision,'events':[{'id':event['id'],'status':'confirmed',**changes}]})
+
+        self.assertEqual(review(job['revision'],actors='甲公司',use_source_actor=True).status_code,409)
+        response = review(job['revision'],actors='乙公司',use_source_actor=True)
+        self.assertEqual(response.status_code,200,response.text)
+        saved = response.json()
+        self.assertEqual(saved['timeline_events'][0]['original']['actors'],'')
+        self.assertEqual(saved['timeline_events'][0]['actors'],'乙公司')
+        unchanged = review(saved['revision']).json()
+        self.assertEqual(unchanged['timeline_events'][0]['actors'],'乙公司')
+        self.assertEqual(review(unchanged['revision'],actors='',actors_edited=True).status_code,422)
+        response = review(unchanged['revision'],actors='',actors_edited=True,status='amended',note='复核后清空主体')
+        self.assertEqual(response.status_code,200,response.text)
+        cleared = response.json()
+        self.assertEqual(cleared['timeline_events'][0]['actors'],'')
+        self.assertTrue(cleared['timeline_events'][0]['actors_edited'])
+        self.assertEqual(review(cleared['revision'],actors='乙公司',use_source_actor=True).status_code,409)
 
 
 class CombinedVisionTests(unittest.IsolatedAsyncioTestCase):

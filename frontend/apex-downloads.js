@@ -165,6 +165,7 @@
   async function mail(options) {const destination=await chooseDestination();if(!destination)return null;const item=await api('/mail-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...options,...destination})});return watch(item);}
   async function court(options){const item=await api('/court-jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(options)});return watch(item);}
   async function saveCase(identity){const destination=await chooseDestination({title:'确认保存到案件文件夹',caseOnly:true});if(!destination)return null;return api('/records/'+identity+'/save-case',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(destination)});}
+  async function saveBlobToCase(blob,caseId){const id=blobTasks.get(blob);if(!id)throw new Error('下载记录不可用，请重试导出');const task=tasks.get(id);if(task?.queue)await task.queue;const saved=await api('/records/'+id+'/save-case',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:caseId,confirmed:true,purpose:'ai_answer'})});if(task)update(task,saved,false);return saved;}
   // Cover explicit download anchors, including detached anchors clicked by page code.
   // Preview URLs and ordinary navigation are left alone; registered artifacts keep their IDs.
   const capturedLinks=new WeakSet(),capturedNames=new Set();
@@ -221,5 +222,5 @@
     }catch(error){if(task)update(task,{status:'partial',phase:'系统保存位置尚未确认',error:error.message});nativeTransfers.delete(event.id);console.warn('Native download tracking:',error.message);}
   }
   function downloadURL(url,name='',metadata={}){const link=document.createElement('a');link.href=url;link.download=name;link.dataset.downloadCategory=metadata.category||'';link.dataset.downloadSource=metadata.source||'';link.click();}
-  window.ApexDownloads={downloadURL,fetch:monitoredFetch,record,watch,mail,court,saveCase,progressHtml,size,escape,api,openCenter,confirmAction,objectURL,rememberBlob,nativeMatches,nativeRecord,nativeEvent};
+  window.ApexDownloads={downloadURL,fetch:monitoredFetch,record,watch,mail,court,saveCase,saveBlobToCase,progressHtml,size,escape,api,openCenter,confirmAction,objectURL,rememberBlob,nativeMatches,nativeRecord,nativeEvent};
 })();

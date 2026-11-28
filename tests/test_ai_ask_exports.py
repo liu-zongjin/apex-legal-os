@@ -24,6 +24,48 @@ SAMPLE_EXPORT = {
 
 
 class AiAskExportTests(unittest.TestCase):
+    def test_answer_only_word_uses_firm_logo_without_question_or_ai_labels(self):
+        from PIL import Image
+        logo = io.BytesIO()
+        Image.new('RGB', (300, 60), 'white').save(logo, 'PNG')
+        data = {**SAMPLE_EXPORT, 'answer_only': True, 'answer': '# 匿名检索报告\n\n依据《民法典》第五条，正文内容【依据 1】【依据2】。\n\n> 来源提示：材料未穷尽。'}
+        document = Document(io.BytesIO(main._generate_ai_ask_export_docx(data, logo=logo.getvalue())))
+        text = '\n'.join(paragraph.text for paragraph in document.paragraphs)
+        self.assertIn('匿名检索报告', text)
+        self.assertIn('正文内容', text)
+        self.assertIn('依据《民法典》第五条', text)
+        self.assertNotIn('【依据', text)
+        self.assertNotIn('来源提示', text)
+        self.assertNotIn('元典·案例库 MCP', text)
+        for unwanted in ('预约合同能否强制履行', '法律操作系统', 'deepseek', '检索与核验记录'):
+            self.assertNotIn(unwanted, text)
+        self.assertNotIn('问题', [paragraph.text for paragraph in document.paragraphs])
+        self.assertNotIn('回答', [paragraph.text for paragraph in document.paragraphs])
+        header = document.sections[0].header.paragraphs[0]
+        self.assertEqual(header.alignment, 1)
+        self.assertEqual(len(header._element.xpath('.//w:drawing')), 1)
+        self.assertNotIn('AI', document.sections[0].footer.paragraphs[0].text)
+
+    def test_word_citation_cleanup_preserves_source_prose_and_legal_references(self):
+        answer = ('第一点【依据1】【依据 2】；见《民法典》第五条[FILE:3]。\n'
+                  '第二点[WEB:4][citation:5][文件 6][网页 7]。\n'
+                  '[REF:12:3]保留原文[/REF]**【依据8】**\n\n> 来源提示：需要核验。')
+        cleaned = main._clean_ai_answer_for_word(answer)
+        self.assertEqual(cleaned, '第一点；见《民法典》第五条。\n第二点。\n保留原文')
+
+    def test_answer_export_passes_saved_firm_logo_and_answer_only_mode(self):
+        from PIL import Image
+        import base64
+        logo = io.BytesIO()
+        Image.new('RGB', (40, 20), 'white').save(logo, 'PNG')
+        profile = {'firm_logo': 'data:image/png;base64,' + base64.b64encode(logo.getvalue()).decode()}
+        with patch.object(main, '_load_ai_ask_export', return_value=SAMPLE_EXPORT), \
+             patch('backend.appearance.get_appearance', return_value=profile), \
+             patch.object(main, '_generate_ai_ask_export_docx', return_value=b'fixture') as generate:
+            main.export_ai_ask_message('anonymous', 'docx', layout='legal_standard')
+        self.assertTrue(generate.call_args.args[0]['answer_only'])
+        self.assertEqual(generate.call_args.kwargs['logo'], logo.getvalue())
+
     def test_markdown_export_contains_question_answer_sources_and_reasoning(self):
         content = main._build_ai_ask_export_markdown(SAMPLE_EXPORT)
         self.assertIn("# 法律操作系统 AI增强", content)

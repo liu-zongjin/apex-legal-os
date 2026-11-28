@@ -15,6 +15,10 @@ HTML = '<!DOCTYPE html><html lang="zh-CN"><meta charset="UTF-8"><title>蓝色正
 
 
 class ArtifactTests(unittest.TestCase):
+    def setUp(self):
+        appearance = patch('backend.appearance.get_appearance', return_value={'firm_logo': ''})
+        appearance.start()
+        self.addCleanup(appearance.stop)
     def test_historical_and_named_artifacts(self):
         answer = f'🙂已生成。\n```svg filename="蓝色正方形.svg"\n{SVG}\n```\n\n```html\n{HTML}\n```'
         items = extract_artifacts(answer)

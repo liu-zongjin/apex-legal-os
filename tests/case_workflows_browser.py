@@ -47,7 +47,7 @@ def run(output):
                 parent.goto(base+'/case-workflows?case_id=1')
                 parent.evaluate('''() => { window.hubMessages=[]; window.addEventListener('message', e => window.hubMessages.push(e.data)); document.body.innerHTML='<iframe id="hub-frame" style="width:100%;height:800px" src="/case-workflows?case_id=1"></iframe>'; }''')
                 hub_frame=parent.frame_locator('#hub-frame')
-                hub_frame.locator('#caseSearch').wait_for()
+                hub_frame.locator('#caseTitleSwitch').wait_for()
                 hub_frame.locator('#knowledgePlus').click()
                 parent.wait_for_function("window.hubMessages.some(x => x.type === 'apex:case-hub-knowledge' && x.caseId === 1)")
                 parent.close()
@@ -58,11 +58,8 @@ def run(output):
                     cards=[page.locator(selector).bounding_box() for selector in ['.materials','.form']]
                     assert abs(cards[0]['y']-cards[1]['y'])<1
                     assert abs(cards[0]['width']-cards[1]['width'])<1
-                    controls=[page.locator(selector).bounding_box() for selector in ['#caseSearch','.case-bar .segmented']]
-                    if width > 1400:
-                        assert abs((controls[0]['y'] + controls[0]['height']/2) - (controls[1]['y'] + controls[1]['height']/2)) < 5
-                    else:
-                        assert controls[1]['y'] >= controls[0]['y'] + controls[0]['height']
+                    controls=[page.locator(selector).bounding_box() for selector in ['.case-bar-title h1','.case-bar .segmented']]
+                    assert controls[1]['y'] >= controls[0]['y'] + controls[0]['height']
                     assert page.locator('#knowledgePlus').is_visible()
                     assert page.locator('.workflow-guide').bounding_box()['height']<115
                     assert cards[0]['y']<440  # Separate case context and ordered navigation rows.
@@ -119,7 +116,7 @@ def run(output):
                 page.keyboard.press('Escape')
                 assert not page.locator('#preview').is_visible()
                 page.screenshot(path=str(output/'事实核对-1440-light.png'),full_page=True)
-                downloads=page.locator('#detail > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent}))')
+                downloads=page.locator('#detail > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent.trim()}))')
                 for download in downloads:
                     assert download['name']
                     response=page.request.get(base+download['url']);assert response.ok
@@ -192,7 +189,7 @@ def run(output):
                 page.get_by_text('证据册已生成，请检查页码和目录。',exact=True).wait_for(timeout=20000)
                 page.screenshot(path=str(output/'证据册-1440-light.png'),full_page=True)
                 # Download artifacts through actual registered routes.
-                downloads=page.locator('#detail > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent}))')
+                downloads=page.locator('#detail > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent.trim()}))')
                 for download in downloads:
                     assert download['name']
                     response=page.request.get(base+download['url']);assert response.ok
@@ -233,10 +230,18 @@ def run(output):
                 page.locator('#chooseTimelineEvidence').click()
                 page.locator('#submit').click()
                 page.locator('#saveTimeline').wait_for(state='attached',timeout=20000)
-                page.locator('#refresh').click()
                 page.locator('.timeline-delivery > summary').click()
                 assert page.locator('[data-time-event]').count()==2
                 assert page.locator('.timeline-entry.has-conflict').count()==2
+                page.locator('#refresh').click()
+                duplicates=page.locator('.timeline-duplicates')
+                duplicates.locator('summary').click()
+                assert '不会自动合并' in duplicates.inner_text()
+                assert duplicates.locator('[data-duplicate-event]').count()==2
+                page.screenshot(path=str(output/'时间轴-可能重复记录.png'))
+                duplicates.locator('[data-duplicate-event]').first.click()
+                assert page.locator('.timeline-editor').is_visible()
+                page.locator('#closeTimelineReview').click()
                 comparison=page.locator('.timeline-comparison').first
                 comparison.locator('summary').click()
                 assert '匿名测试：不同文件对同一付款事项的说法待核对' in comparison.inner_text()
@@ -265,13 +270,13 @@ def run(output):
                 page.frame_locator('#sourcePreview').locator('#page').wait_for()
                 page.keyboard.press('Escape')
                 page.locator('[data-time-field="description"]').fill('未保存修改')
-                page.locator('#closeTimelineReview').click()
-                page.locator('#refresh').click()
+                assert page.locator('#timelineUnsaved').is_visible()
+                assert page.locator('#restoreTimeline').is_visible()
                 page.locator('#restoreTimeline').click()
-                page.locator('#refresh').click()
                 page.wait_for_function("document.querySelector('[data-time-field=description]').value !== '未保存修改'")
+                page.locator('#closeTimelineReview').click()
                 assert page.locator('#manualTimeline').count()==0
-                page.locator('.case-actions').hover();page.locator('#topTimelineManual').click()
+                page.locator('#timelineMore').click();page.locator('#topTimelineManual').click()
                 picker=page.frame_locator('#manualEventPicker')
                 picker.locator('.file-row').filter(has_text='03_草稿.txt').click()
                 picker.locator('#archiveAssignBtn').click()
@@ -286,7 +291,7 @@ def run(output):
                 # Switch styles and hide/show citations before producing immutable exports.
                 page.locator('[data-export-style="cards"]').click()
                 page.locator('#timelineEvidence').uncheck()
-                page.locator('.export-preview > summary').click()
+                assert page.locator('.export-preview').get_attribute('open') is not None
                 image=page.locator('.export-paper img')
                 image.evaluate('(image)=>image.decode()')
                 assert image.evaluate('(image)=>image.naturalWidth')>0
@@ -318,7 +323,7 @@ def run(output):
                 page.wait_for_function("document.getElementById('toast').textContent.includes('已打开所在文件夹')")
                 page.locator('#timelineExportFolder').click()
                 assert len(open_calls)==2
-                page.locator('.export-preview > summary').click()
+                assert page.locator('.export-preview').get_attribute('open') is not None
                 page.locator('.export-paper img').evaluate('(image)=>image.decode()')
                 page.screenshot(path=str(output/'时间轴-样式选择与预览.png'),full_page=True)
                 page.evaluate('window.scrollTo(0,0)');page.screenshot(path=str(output/'时间轴-1440-dark.png'),full_page=True)
@@ -326,7 +331,7 @@ def run(output):
                 page.set_viewport_size({'width':1440,'height':900})
                 page.locator('#detailPanel').scroll_into_view_if_needed()
                 page.evaluate('window.scrollTo(0,0)');page.screenshot(path=str(output/'时间轴-1440-light.png'),full_page=True)
-                downloads=page.locator('#detail .timeline-delivery > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent}))')
+                downloads=page.locator('#detail .timeline-delivery > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent.trim()}))')
                 assert len(downloads)==5 and all(not item['name'].endswith('.json') for item in downloads)
                 for download in downloads:
                     response=page.request.get(base+download['url']);assert response.ok
@@ -343,7 +348,7 @@ def run(output):
                 page.locator('#saveTimeline').wait_for(state='attached');page.locator('.timeline-delivery > summary').click()
                 assert page.locator('[data-time-event]').count()==3
                 (runtime/'匿名材料'/'证据子目录').mkdir(exist_ok=True)
-                page.locator('.case-actions').hover();page.locator('#topTimelineManual').click()
+                page.locator('#timelineMore').click();page.locator('#topTimelineManual').click()
                 assert page.locator('#manualEventDialog').is_visible()
                 picker=page.frame_locator('#manualEventPicker')
                 page.route('**/timeline-select-file',lambda route:route.fulfill(status=200,content_type='application/json',body=json.dumps({'token':'a'*32,'path':'/tmp/匿名文件.pdf','name':'匿名文件.pdf'},ensure_ascii=False)))
@@ -368,7 +373,7 @@ def run(output):
                 manual_card=page.locator('.timeline-entry').filter(has_text='手动添加的10元事件')
                 assert '数值与引文不一致' not in manual_card.inner_text()
                 assert '打开关联文件夹' in manual_card.inner_text()
-                page.locator('.case-actions').hover();page.locator('#topTimelineAdd').click()
+                page.locator('#timelineMore').click();page.locator('#topTimelineAdd').click()
                 assert frame.locator('.file-row').filter(has_text='Stella办案成果').count()==0
                 frame.locator('#fileSearch').fill('task.json')
                 frame.locator('.search-head').wait_for()
@@ -405,16 +410,42 @@ def run(output):
                 page.locator('#sources [data-source-party="被告方"]').click()
                 assert '被告方' in page.locator('#sources summary').inner_text()
                 page.locator('#submit').click()
-                page.locator('#saveTimeline').wait_for(timeout=20000)
+                page.locator('#saveTimeline').wait_for(state='attached',timeout=20000)
                 page.wait_for_function("document.querySelectorAll('[data-time-event]').length===5")
                 page.locator('[data-time-select]').first.check()
+                assert page.locator('#timelineSelectionBar').is_visible()
+                assert page.locator('#timelineSelectionCount').inner_text()=='已选择 1 项'
+                assert page.locator('#removeTimelineSelected').is_visible()
+                page.locator('#clearTimelineSelection').click()
+                assert page.locator('#timelineSelectionBar').is_hidden()
+                page.locator('[data-time-select]').first.check()
                 page.locator('[data-time-select]').nth(1).check()
-                page.locator('#refresh').click()
+                assert page.locator('#timelineSelectionCount').inner_text()=='已选择 2 项'
+                page.screenshot(path=str(output/'时间轴-批量操作.png'))
                 page.locator('#removeTimelineSelected').click()
                 page.wait_for_function("document.querySelectorAll('[data-time-event]').length===3")
+                page.locator('#refresh').click()
+                assert page.locator('#timelineTopFilters').get_by_text('可能重复的事件',exact=False).count()==0
+                assert page.locator('#timelineTopFilters').get_by_text('放弃修改',exact=False).count()==0
                 page.locator('[data-time-filter="excluded"]').click()
                 assert page.locator('[data-time-event]').count()==2
+                page.locator('[data-restore-event]').first.click()
+                page.wait_for_function("document.querySelectorAll('[data-time-event]').length===1")
+                page.locator('[data-time-select]').first.check()
+                assert page.locator('#restoreTimelineSelected').is_visible()
+                assert page.locator('#purgeTimelineSelected').is_visible()
+                page.locator('#purgeTimelineSelected').click()
+                assert page.locator('#timelinePurgeDialog').is_visible()
+                assert '历史成果' in page.locator('#timelinePurgeDialog').inner_text()
+                page.locator('#timelinePurgeCancel').click()
+                assert page.locator('[data-time-event]').count()==1
+                page.locator('#purgeTimelineSelected').click()
+                page.locator('#timelinePurgeConfirm').click()
+                page.wait_for_function("document.querySelectorAll('[data-time-event]').length===0")
+                assert page.locator('#timelineSelectionBar').is_hidden()
+                page.locator('#refresh').click()
                 page.locator('[data-time-filter="all"]').click()
+                assert page.locator('[data-time-event]').count()==4
                 # The same menu still accepts archive categories without descriptions.
                 page.locator('#inputStage').evaluate('(el)=>el.open=true')
                 archive=page.locator('#filePicker')

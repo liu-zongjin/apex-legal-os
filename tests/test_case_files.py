@@ -35,6 +35,25 @@ from backend.case_files import (
 
 
 class CaseFilesTests(unittest.TestCase):
+    def test_case_citation_preview_uses_bound_file_and_word_paragraphs(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from docx import Document
+        from backend import case_files
+        document = Document()
+        document.add_paragraph('第一段匿名材料')
+        document.add_paragraph('第二段需要核对的内容')
+        document.save(self.root / '材料.docx')
+        app = FastAPI()
+        case_files.register_case_file_routes(app, self.get_db, self.root, parse_file=None, call_ai=None)
+        with patch.object(case_files, '_bound_root', return_value=self.root):
+            client = TestClient(app)
+            response = client.post('/api/case-manager/cases/1/local-files/citation-preview', json={'path': '材料.docx'})
+            invalid = client.post('/api/case-manager/cases/1/local-files/citation-preview', json={'path': '../材料.docx'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['paragraphs'][1], {'number': 2, 'text': '第二段需要核对的内容'})
+        self.assertNotEqual(invalid.status_code, 200)
+
     def test_file_evidence_budget_preserves_each_file_and_original_spans(self):
         from backend import ai_context
         rows=[{'relative_path':f'{i}.txt','display_name':f'{i}.txt','chunk_index':0,'locator':'第1页',

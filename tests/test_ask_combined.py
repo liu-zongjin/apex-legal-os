@@ -85,6 +85,14 @@ class CitationTests(unittest.TestCase):
         self.assertIn('违约金能否调整？', messages[1]['content'])
         self.assertIn('不得补写', messages[0]['content'])
 
+    def test_noncontiguous_retrieval_passages_never_share_a_citation(self):
+        text = '第一处原文。' + '\n\n…（相关段落分隔）…\n\n' + '第二处原文。'
+        self.assertEqual(list(ask_combined._evidence_spans(text)), ['第一处原文。', '第二处原文。'])
+        with patch('backend.main._search_ask_articles', return_value=([{'id': 1, 'title': '匿名文章', 'content': text}], [])):
+            items, _ = ask_combined.knowledge_evidence('问题', None, {'type': 'section'}, 5000)
+        self.assertEqual([item['excerpt'] for item in items], ['第一处原文。', '第二处原文。'])
+        self.assertEqual(ask_combined.citation_payload(items[1], 2)['quote'], '第二处原文。')
+
 
 class AnswerFlowTests(unittest.IsolatedAsyncioTestCase):
     async def run_answer(self, reply, sources=('knowledge', 'fada'), file_scope=None):
@@ -142,6 +150,17 @@ class AnswerFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(result['combined_sources'], ['files'])
         self.assertEqual(result['cited_sources'][0]['source_type'], 'local_file')
+
+    async def test_input_budget_omissions_are_reported(self):
+        large = [{**CitationTests.items[0], 'article_id': i, 'block': '法' * 4000} for i in range(3)]
+        async def ai(model, messages, **options):
+            return '结论【依据1】', '', model
+        with patch('backend.ai_context.model_budget', return_value=9000), \
+             patch.object(ask_combined, 'knowledge_evidence', return_value=(large, [])):
+            result = await ask_combined.answer_combined(
+                '问题', 'model', {'knowledge'}, get_db=_Connection, call_ai=ai, parse_file=None)
+        self.assertLess(result['source_breakdown']['knowledge'], 3)
+        self.assertTrue(any('未纳入回答' in warning for warning in result['warnings']))
 
 
 if __name__ == '__main__':

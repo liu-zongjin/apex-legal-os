@@ -57,6 +57,18 @@ class DownloadCenterTests(unittest.TestCase):
         self.assertEqual(result.status_code,200,result.text)
         return result.json()
 
+    def test_ai_answer_saved_to_excluded_case_results_folder(self):
+        from backend.case_files import _expand_ai_paths
+        identity = self.create(category='ai', source='AI增强')
+        self.upload(identity)
+        result = self.client.post('/api/download-center/records/'+identity+'/save-case',
+                                  json={'case_id': 1, 'confirmed': True, 'purpose': 'ai_answer'})
+        self.assertEqual(result.status_code, 200, result.text)
+        output = Path(result.json()['path'])
+        self.assertEqual(output.parent, self.case_root / 'Stella办案成果')
+        (self.case_root / '原始材料.txt').write_text('匿名材料')
+        self.assertEqual(_expand_ai_paths(self.case_root, ['__CASE_ROOT__']), ['原始材料.txt'])
+
     def test_staged_file_case_confirmation_exact_destination_and_no_overwrite(self):
         identity=self.create();item=self.upload(identity)
         self.store.update(identity, created_at='2026-11-19T16:00:00Z')

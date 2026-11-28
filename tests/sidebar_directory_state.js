@@ -7,7 +7,14 @@ const directory = fs.readFileSync('frontend/sidebar-directory.js', 'utf8');
 const store = new Map();
 const grid = { innerHTML: '' };
 const title = { textContent: '' };
-const elements = { 'article-grid': grid, 'page-title': title };
+const scopeLabel = { textContent: '' };
+const scopeTrigger = { value: 'all', querySelector: () => scopeLabel, setAttribute: () => {} };
+const elements = {
+  'article-grid': grid,
+  'page-title': title,
+  'search-scope': scopeTrigger,
+  'search-scope-menu': { querySelectorAll: () => [] }
+};
 const ctx = {
   console,
   URLSearchParams,
@@ -102,6 +109,11 @@ const ctx = {
 ctx.window = ctx;
 vm.createContext(ctx);
 vm.runInContext(
+  app.match(/^const SEARCH_SCOPE_LABELS = .*$/m)[0] + '\n' +
+    app.slice(app.indexOf('function renderSearchScopeControl('), app.indexOf('\nfunction initSearchScopeMenu(')),
+  ctx
+);
+vm.runInContext(
   app.slice(app.indexOf('function readJsonStore('), app.indexOf('function readSavedViewsStore(')),
   ctx
 );
@@ -195,9 +207,11 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
   ctx.state.domain = '行政法';
   ctx.state.subcategoryId = 10;
   assert.equal(ctx.getCurrentViewPayload().subcategoryId, 10);
-  ctx.savedViews = [{ id: 'saved', domain: '行政法', subcategoryId: 11 }];
+  ctx.savedViews = [{ id: 'saved', domain: '行政法', subcategoryId: 11, searchScope: 'notes' }];
   ctx.restoreSavedView('saved');
   assert.equal(ctx.state.subcategoryId, 11);
+  assert.equal(scopeTrigger.value, 'notes');
+  assert.equal(scopeLabel.textContent, '笔记');
   ctx.savedViews = [{ id: 'legacy', domain: '行政法' }];
   ctx.restoreSavedView('legacy');
   assert.equal(ctx.state.subcategoryId, null);

@@ -1,6 +1,117 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script src="/static/color-theme.js"></script><link rel="stylesheet" href="/static/apex-design-tokens.css?v=2026102502"><style>
-body{margin:0;font:13px var(--apex-font-sans);background:var(--apex-surface-muted);color:var(--apex-text)}header{position:sticky;top:0;display:flex;align-items:center;justify-content:center;gap:12px;padding:10px;background:var(--apex-surface-solid);border-bottom:1px solid var(--apex-border-subtle)}button{border:1px solid var(--apex-border-subtle);border-radius:var(--apex-radius-sm);background:var(--apex-surface-solid);color:var(--apex-text);padding:6px 12px;cursor:pointer}button:disabled{opacity:.4}button:focus-visible{outline:2px solid var(--apex-accent);outline-offset:2px}img{display:block;width:calc(100% - 20px);height:auto;margin:10px;background:white}#error{padding:12px;color:var(--apex-danger)}[hidden]{display:none}</style></head><body><header><button id="previous" type="button">上一页</button><span id="position" aria-live="polite"></span><button id="next" type="button">下一页</button></header><div id="error" role="status" hidden></div><img id="page" alt="原件页面"><script>
-const config=__PAGE_CONFIG__,image=document.getElementById('page'),position=document.getElementById('position'),error=document.getElementById('error');
-function render(){error.hidden=true;position.textContent=`原件第${config.page} / ${config.count}页`;document.getElementById('previous').disabled=config.page===1;document.getElementById('next').disabled=config.page===config.count;image.src=config.url+'&page='+config.page;}
-image.onerror=()=>{error.textContent='原件页面读取失败，请检查材料是否变化后重新载入。';error.hidden=false;};document.getElementById('previous').onclick=()=>{config.page--;render();};document.getElementById('next').onclick=()=>{config.page++;render();};render();
-</script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>材料原文</title>
+  <script src="/static/color-theme.js"></script>
+  <link rel="stylesheet" href="/static/apex-design-tokens.css?v=2026102502">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 13px var(--apex-font-sans); color: var(--apex-text); background: var(--apex-surface-muted); }
+    [hidden] { display: none !important; }
+    header {
+      position: sticky; z-index: 2; top: 0; display: flex; align-items: center; justify-content: center;
+      gap: var(--apex-space-2); min-height: 43px; padding: var(--apex-space-1) var(--apex-space-3);
+      border-bottom: 1px solid var(--apex-border-subtle); background: var(--apex-surface-solid);
+    }
+    button {
+      min-height: 30px; padding: 4px 9px; border: 1px solid var(--apex-border-subtle);
+      border-radius: var(--apex-radius-sm); background: var(--apex-surface-solid);
+      color: var(--apex-text); font: inherit; cursor: pointer;
+    }
+    button:hover:not(:disabled) { background: var(--apex-surface-muted); }
+    button:disabled { opacity: .42; cursor: default; }
+    button:focus-visible { outline: 2px solid var(--apex-accent); outline-offset: 2px; }
+    #position { min-width: 90px; text-align: center; font-variant-numeric: tabular-nums; color: var(--apex-text-secondary); }
+    #error { margin: var(--apex-space-3); color: var(--apex-danger, var(--apex-accent)); }
+    #page, .text-paper {
+      display: block; width: calc(100% - 28px); max-width: 760px; margin: 14px auto; border: 1px solid var(--apex-border-subtle);
+      border-radius: var(--apex-radius-sm); box-shadow: var(--apex-shadow-sm);
+    }
+    #page { height: auto; background: white; }
+    .text-paper { padding: clamp(10px, 2.8vw, 30px); background: var(--apex-surface-solid); }
+    .text-paper section { padding: 8px var(--apex-space-2); border-left: 2px solid transparent; scroll-margin-top: 58px; }
+    .text-paper section + section { margin-top: var(--apex-space-2); }
+    .text-paper header { position: static; display: block; min-height: 0; padding: 0; border: 0; background: transparent; }
+    .text-paper p { margin: var(--apex-space-1) 0 0; font-size: 14px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .text-paper small { color: var(--apex-text-secondary); }
+    .text-paper .match { border-left-color: #a67b46; background: color-mix(in srgb, #b9813e 9%, var(--apex-surface-solid)); border-radius: 0 var(--apex-radius-sm) var(--apex-radius-sm) 0; }
+    .text-paper mark { padding: 1px 0; background: color-mix(in srgb, #b9813e 26%, var(--apex-surface-solid)); color: inherit; border-radius: 2px; }
+    .word-table { margin: var(--apex-space-2) 0; overflow-x: auto; }
+    .word-table table { width: 100%; border-collapse: collapse; font-size: 13px; line-height: 1.65; }
+    .word-table caption { padding: var(--apex-space-2); color: var(--apex-text-secondary); text-align: start; }
+    .word-table :is(th, td) { padding: var(--apex-space-2); border: 1px solid var(--apex-border-subtle); text-align: start; vertical-align: top; }
+    .word-table th { width: 1%; background: var(--apex-surface-muted); color: var(--apex-text-secondary); font-size: 11px; font-weight: 500; white-space: nowrap; }
+    .word-table td { min-width: 6em; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .word-table tr.match th { box-shadow: inset 2px 0 #a67b46; }
+    #textSummary { color: var(--apex-text-secondary); }
+  </style>
+</head>
+<body>
+  <div id="pageViewer" hidden>
+    <header aria-label="原件翻页"><button id="previous" type="button">上一页</button><span id="position" aria-live="polite"></span><button id="next" type="button">下一页</button></header>
+    <p id="error" role="status" hidden>原件页面读取失败，请检查材料后重新载入。</p>
+    <img id="page" alt="原件页面">
+  </div>
+  <div id="textViewer" hidden>
+    <header id="textSummary" data-location="__TEXT_LOCATION__">__TEXT_SUMMARY__</header>
+    <main class="text-paper" aria-label="Word 正文">__TEXT_SECTIONS__</main>
+  </div>
+  <script>
+    const config = __PAGE_CONFIG__;
+    if (config) {
+      const image = document.getElementById('page');
+      const position = document.getElementById('position');
+      const error = document.getElementById('error');
+      const previous = document.getElementById('previous');
+      const next = document.getElementById('next');
+      let request, objectUrl, focus;
+      document.getElementById('pageViewer').hidden = false;
+      async function render() {
+        error.hidden = true;
+        image.hidden = true;
+        image.removeAttribute('src');
+        focus = null;
+        position.textContent = '第 ' + config.page + ' / ' + config.count + ' 页';
+        previous.disabled = config.page === 1;
+        next.disabled = config.page === config.count;
+        const address = config.url + '&page=' + config.page;
+        if (!config.citation) {
+          image.src = address;
+          return;
+        }
+        request?.abort();
+        const current = new AbortController();
+        request = current;
+        try {
+          const response = await fetch(address, {signal: current.signal});
+          if (!response.ok) throw new Error('预览读取失败');
+          const blob = await response.blob();
+          if (current.signal.aborted) return;
+          const location = response.headers.get('X-Stella-Citation-Y');
+          focus = location === null ? null : Number(location);
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+          objectUrl = URL.createObjectURL(blob);
+          image.src = objectUrl;
+        } catch (failure) {
+          if (!current.signal.aborted) error.hidden = false;
+        }
+      }
+      image.onerror = () => { error.hidden = false; };
+      image.onload = () => {
+        image.hidden = false;
+        if (!Number.isFinite(focus)) return;
+        const bounds = image.getBoundingClientRect();
+        window.scrollTo(0, window.scrollY + bounds.top + bounds.height * focus - innerHeight / 2);
+      };
+      previous.onclick = () => { config.page--; render(); };
+      next.onclick = () => { config.page++; render(); };
+      render();
+    } else {
+      document.getElementById('textViewer').hidden = false;
+      document.querySelector('mark')?.scrollIntoView({block:'center', inline:'nearest'});
+    }
+  </script>
+</body>
+</html>

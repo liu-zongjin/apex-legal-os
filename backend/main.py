@@ -32,7 +32,6 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 import jieba
 import requests
-import openpyxl
 from bs4 import BeautifulSoup
 from fastapi import BackgroundTasks, FastAPI, UploadFile, File, Form, HTTPException, Query, Request, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -121,6 +120,8 @@ from .aluris_mcp import (
     search_authoritative_cases,
 )
 from .case_research import CASE_SOURCE_MCP, CASE_SOURCE_PUBLIC, search_cases_structured
+from .research_routes import create_router as create_research_router
+from .authority_watch_routes import create_router as create_authority_watch_router
 from .yuandian_cases import source_status as yuandian_case_source_status
 from .yuandian_mcp import (
     YuandianMCPError,
@@ -10636,38 +10637,10 @@ def _is_casual_chat(question: str) -> bool:
     return q_lower in CASUAL_PATTERNS
 
 
-class ResearchProjectPayload(BaseModel):
-    case_id: Optional[int] = None
-    name: str
-    client: str = ""
-    case_info: str = ""
-    issues: str = ""
-    status: str = "active"
-    notes: str = ""
-
-
-class ResearchMemoPayload(BaseModel):
-    question: str = ""
-    title: str = ""
-    markdown: str = ""
-
-
 class CaseTimelineEntryPayload(BaseModel):
     title: str = ""
     content: str = ""
     happened_at: str = ""
-
-
-class LinkedAskQuestionPayload(BaseModel):
-    question: str
-    answer: str
-    model: str = ""
-    sources: list = []
-    cited_sources: list = []
-    reasoning: str = ""
-    is_reasoning_model: bool = False
-    created_at: str = ""
-    source_ref: str = ""
 
 
 class AIAskMessagePayload(BaseModel):
@@ -10700,26 +10673,6 @@ class AIAskHistoryCasePayload(BaseModel):
     case_id: int
 
 
-class AuthorityWatchTaskPayload(BaseModel):
-    name: str
-    domains: list = []
-    keywords: list = []
-    sources: list = []
-    frequency_hours: int = 24
-    enabled: int = 1
-
-
-def _row_to_project(row, conn=None) -> dict:
-    data = dict(row)
-    data["article_count"] = 0
-    if conn:
-        data["article_count"] = conn.execute(
-            "SELECT COUNT(*) FROM research_project_articles WHERE project_id=?",
-            (row["id"],)
-        ).fetchone()[0]
-    return data
-
-
 def _case_client_names(conn, case_id: int) -> str:
     rows = conn.execute(
         """
@@ -10730,47 +10683,6 @@ def _case_client_names(conn, case_id: int) -> str:
         (case_id,),
     ).fetchall()
     return "、".join([f"{r['role']}：{r['name']}" if r["role"] else r["name"] for r in rows])
-
-
-def _case_to_research_case(conn, row, include_children: bool = True) -> dict:
-    item = dict(row)
-    project = conn.execute(
-        "SELECT id FROM research_projects WHERE case_id=? ORDER BY updated_at DESC, id DESC LIMIT 1",
-        (row["id"],),
-    ).fetchone()
-    project_id = project["id"] if project else None
-    item["project_id"] = project_id
-    item["client_names"] = _case_client_names(conn, row["id"])
-    item["article_count"] = 0
-    item["ledger_count"] = 0
-    item["memo_entry_count"] = 0
-    if project_id:
-        item["article_count"] = conn.execute(
-            "SELECT COUNT(*) FROM research_project_articles WHERE project_id=?",
-            (project_id,),
-        ).fetchone()[0]
-        item["ledger_count"] = conn.execute(
-            "SELECT COUNT(*) FROM research_case_ledgers WHERE project_id=?",
-            (project_id,),
-        ).fetchone()[0]
-        item["memo_entry_count"] = conn.execute(
-            "SELECT COUNT(*) FROM research_case_memo_entries WHERE project_id=?",
-            (project_id,),
-        ).fetchone()[0]
-    item["series_children"] = []
-    if include_children and item.get("case_kind") == "series":
-        children = conn.execute(
-            """SELECT * FROM case_manager_cases
-               WHERE parent_series_id=? AND case_kind='series_child'
-                 AND COALESCE(source_status,'active')='active'
-               ORDER BY series_order,id""",
-            (row["id"],),
-        ).fetchall()
-        item["series_children"] = [_case_to_research_case(conn, child, False) for child in children]
-        item["article_count"] += sum(int(child.get("article_count") or 0) for child in item["series_children"])
-        item["ledger_count"] += sum(int(child.get("ledger_count") or 0) for child in item["series_children"])
-        item["memo_entry_count"] += sum(int(child.get("memo_entry_count") or 0) for child in item["series_children"])
-    return item
 
 
 def _ensure_case_research_project(conn, case_id: int) -> int:
@@ -10806,191 +10718,11 @@ def _timeline_public_entry(row):
     return item
 
 
-def _case_research_detail(conn, case_id: int) -> dict:
-    project_id = _ensure_case_research_project(conn, case_id)
-    case = conn.execute("SELECT * FROM case_manager_cases WHERE id=?", (case_id,)).fetchone()
-    detail = _project_detail(conn, project_id)
-    detail["case"] = _case_to_research_case(conn, case)
-    detail["ledgers"] = [
-        _timeline_public_entry(r)
-        for r in conn.execute(
-            """
-            SELECT * FROM research_case_ledgers
-            WHERE project_id=?
-            ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC, id DESC
-            """,
-            (project_id,),
-        ).fetchall()
-    ]
-    detail["memo_entries"] = [
-        _timeline_public_entry(r)
-        for r in conn.execute(
-            """
-            SELECT m.*, EXISTS(SELECT 1 FROM calculator_memo_snapshots s WHERE s.memo_id=m.id)
-                       AS has_calculation FROM research_case_memo_entries m
-            WHERE project_id=?
-            ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC, id DESC
-            """,
-            (project_id,),
-        ).fetchall()
-    ]
-    if case["case_kind"] == "series":
-        child_projects = conn.execute(
-            """SELECT rp.id,c.series_code,c.series_display_name,c.title
-               FROM research_projects rp
-               JOIN case_manager_cases c ON c.id=rp.case_id
-               WHERE c.parent_series_id=? AND c.case_kind='series_child'
-                 AND COALESCE(c.source_status,'active')<>'deleted'
-               ORDER BY c.series_order,c.id""",
-            (case_id,),
-        ).fetchall()
-        project_labels = {project_id: "系列事项"}
-        for row in child_projects:
-            project_labels[int(row["id"])] = " · ".join(
-                part for part in [row["series_code"] or "", row["series_display_name"] or row["title"] or ""] if part
-            )
-        project_ids = list(project_labels)
-        article_map = {}
-        for linked_project_id in project_ids:
-            for article in _project_linked_articles_full(conn, linked_project_id):
-                existing = article_map.get(int(article["id"]))
-                if existing:
-                    existing["linked_project_ids"].append(linked_project_id)
-                    existing["series_case_labels"].append(project_labels[linked_project_id])
-                else:
-                    article["linked_project_id"] = linked_project_id
-                    article["linked_project_ids"] = [linked_project_id]
-                    article["series_case_labels"] = [project_labels[linked_project_id]]
-                    article_map[int(article["id"])] = article
-        detail["articles"] = sorted(article_map.values(), key=lambda item: item.get("added_at") or "", reverse=True)
-        marks = ",".join("?" for _ in project_ids)
-        detail["ledgers"] = [
-            {**_timeline_public_entry(row), "series_case_label": project_labels.get(int(row["project_id"]), "系列事项")}
-            for row in conn.execute(
-                f"""SELECT * FROM research_case_ledgers WHERE project_id IN ({marks})
-                    ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC,id DESC""",
-                project_ids,
-            ).fetchall()
-        ]
-        detail["memo_entries"] = [
-            {**_timeline_public_entry(row), "series_case_label": project_labels.get(int(row["project_id"]), "系列事项")}
-            for row in conn.execute(
-                f"""SELECT m.*, EXISTS(SELECT 1 FROM calculator_memo_snapshots s WHERE s.memo_id=m.id)
-                       AS has_calculation FROM research_case_memo_entries m WHERE project_id IN ({marks})
-                    ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC,id DESC""",
-                project_ids,
-            ).fetchall()
-        ]
-    return detail
-
-
-def _project_linked_articles_full(conn, project_id: int) -> list:
-    rows = conn.execute(
-        """
-        SELECT a.id, a.title, a.summary, a.content, a.domains, a.tags,
-               a.source_type, a.source_url, a.source_filename, a.created_at,
-               a.pinned, rpa.added_from, rpa.created_at AS added_at
-        FROM research_project_articles rpa
-        JOIN articles a ON a.id = rpa.article_id
-        WHERE rpa.project_id=?
-        ORDER BY rpa.created_at DESC
-        """,
-        (project_id,),
-    ).fetchall()
-    articles = []
-    for row in rows:
-        item = dict(row)
-        item["domains"] = json.loads(item.get("domains") or "[]")
-        item["tags"] = json.loads(item.get("tags") or "[]")
-        item["pinned"] = bool(item.get("pinned", 0))
-        articles.append(item)
-    return articles
-
-
-def _case_research_detail_for_offline(conn, case_id: int) -> dict:
-    detail = _case_research_detail(conn, case_id)
-    project_id = detail.get("project", {}).get("id")
-    if project_id:
-        if detail.get("case", {}).get("case_kind") != "series":
-            detail["articles"] = _project_linked_articles_full(conn, project_id)
-        questions = conn.execute(
-            "SELECT * FROM research_project_questions WHERE project_id=? ORDER BY created_at ASC",
-            (project_id,),
-        ).fetchall()
-        detail["questions"] = []
-        for row in questions:
-            item = dict(row)
-            item["sources"] = json.loads(item.pop("sources_json") or "[]")
-            item["cited_sources"] = json.loads(item.pop("cited_sources_json") or "[]")
-            detail["questions"].append(item)
-        memos = conn.execute(
-            "SELECT * FROM research_memos WHERE project_id=? ORDER BY updated_at DESC",
-            (project_id,),
-        ).fetchall()
-        detail["memos"] = []
-        for row in memos:
-            item = dict(row)
-            item["sources"] = json.loads(item.pop("sources_json") or "[]")
-            detail["memos"].append(item)
-    return detail
-
-
 def _require_project(conn, project_id: int):
     row = conn.execute("SELECT * FROM research_projects WHERE id=?", (project_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="案件研究不存在")
     return row
-
-
-def _get_project_article_ids(conn, project_id: int) -> list:
-    return [
-        r["article_id"]
-        for r in conn.execute(
-            "SELECT article_id FROM research_project_articles WHERE project_id=?",
-            (project_id,)
-        ).fetchall()
-    ]
-
-
-def _project_detail(conn, project_id: int) -> dict:
-    project = conn.execute("SELECT * FROM research_projects WHERE id=?", (project_id,)).fetchone()
-    if not project:
-        raise HTTPException(status_code=404, detail="研究项目不存在")
-    articles = conn.execute(
-        """
-        SELECT a.id, a.title, a.summary, a.domains, a.source_type, a.source_url,
-               a.source_filename, a.created_at, rpa.added_from, rpa.created_at AS added_at
-        FROM research_project_articles rpa
-        JOIN articles a ON a.id = rpa.article_id
-        WHERE rpa.project_id=?
-        ORDER BY rpa.created_at DESC
-        """,
-        (project_id,)
-    ).fetchall()
-    notes = conn.execute(
-        "SELECT id, content, created_at FROM research_project_notes WHERE project_id=? ORDER BY created_at DESC",
-        (project_id,)
-    ).fetchall()
-    memos = conn.execute(
-        "SELECT id, title, question, created_at, updated_at FROM research_memos WHERE project_id=? ORDER BY updated_at DESC",
-        (project_id,)
-    ).fetchall()
-    ledgers = conn.execute(
-        "SELECT * FROM research_case_ledgers WHERE project_id=? ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC, id DESC",
-        (project_id,)
-    ).fetchall()
-    memo_entries = conn.execute(
-        "SELECT * FROM research_case_memo_entries WHERE project_id=? ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC, id DESC",
-        (project_id,)
-    ).fetchall()
-    return {
-        "project": _row_to_project(project, conn),
-        "articles": [dict(r) for r in articles],
-        "notes": [dict(r) for r in notes],
-        "memos": [dict(r) for r in memos],
-        "ledgers": [_timeline_public_entry(r) for r in ledgers],
-        "memo_entries": [_timeline_public_entry(r) for r in memo_entries],
-    }
 
 
 def _validate_ai_ask_history_key(value: str) -> str:
@@ -11637,7 +11369,21 @@ def delete_word_export_layout(layout_id: str):
     return {"success": True}
 
 
-def _generate_ai_ask_export_docx(data: dict, layout: str = "legal_standard") -> bytes:
+def _clean_ai_answer_for_word(answer: str) -> str:
+    """Remove interface citation markers from a standalone Word answer only."""
+    value = str(answer or "")
+    value = re.sub(r'(\*\*|__)\s*(?:【\s*依据\s*\d+(?:\s*[,，、;；]\s*\d+)*\s*】\s*)+\1', '', value)
+    value = re.sub(r'【\s*依据\s*\d+(?:\s*[,，、;；]\s*\d+)*\s*】', '', value)
+    value = re.sub(r'\[(?:FILE|WEB|citation)\s*:\s*\d+\]', '', value, flags=re.I)
+    value = re.sub(r'\[(?:文件|网页)\s*\d+\]', '', value)
+    # Historical REF wrappers contain actual source text: remove the tags only.
+    value = re.sub(r'\[/?REF(?::[^\]\r\n]+)?\]', '', value, flags=re.I)
+    # The UI appends this status line after the answer; it is not report prose.
+    value = re.sub(r'\n\s*\n\s*>\s*来源提示[：:][^\n]*\s*\Z', '', value)
+    return value.strip()
+
+
+def _generate_ai_ask_export_docx(data: dict, layout: str = "legal_standard", *, logo=None) -> bytes:
     """按用户选择的受控排版预设生成正式、可编辑的法律问答 DOCX。"""
     from io import BytesIO
     from docx import Document
@@ -11710,8 +11456,16 @@ def _generate_ai_ask_export_docx(data: dict, layout: str = "legal_standard") -> 
 
     header = section.header.paragraphs[0]
     artifact_only = bool(data.get("artifact_only"))
-    header.text = "" if artifact_only else (data.get("header_title") or "法律操作系统 · AI增强导出")
-    header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    answer_only = bool(data.get("answer_only"))
+    header.text = "" if artifact_only or answer_only else (data.get("header_title") or "法律操作系统 · AI增强导出")
+    header.alignment = WD_ALIGN_PARAGRAPH.CENTER if answer_only else WD_ALIGN_PARAGRAPH.RIGHT
+    if answer_only and logo:
+        from PIL import Image
+        image = Image.open(BytesIO(logo))
+        width_cm = min(10.0, 1.2 * image.width / max(1, image.height))
+        header.paragraph_format.first_line_indent = Pt(0)
+        header.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+        header.add_run().add_picture(BytesIO(logo), width=Cm(width_cm))
     for run in header.runs:
         set_font(run, 9, (110, 110, 110), font_name=preset["body_font"])
     footer = section.footer.paragraphs[0]
@@ -11725,9 +11479,9 @@ def _generate_ai_ask_export_docx(data: dict, layout: str = "legal_standard") -> 
     field_end = OxmlElement("w:fldChar"); field_end.set(qn("w:fldCharType"), "end")
     page_run._r.extend((field_begin, field_code, field_separate, field_value, field_end))
     set_font(page_run, 8.5, (120, 120, 120), font_name=preset["body_font"])
-    set_font(footer.add_run(" 页" if artifact_only else " 页 · AI 生成内容请核实"), 8.5, (120, 120, 120), font_name=preset["body_font"])
+    set_font(footer.add_run(" 页" if artifact_only or answer_only else " 页 · AI 生成内容请核实"), 8.5, (120, 120, 120), font_name=preset["body_font"])
 
-    if not artifact_only:
+    if not artifact_only and not answer_only:
         title = doc.add_paragraph()
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         title.paragraph_format.space_after = Pt(preset["heading1_after"])
@@ -11756,8 +11510,15 @@ def _generate_ai_ask_export_docx(data: dict, layout: str = "legal_standard") -> 
                 p = doc.add_paragraph(style="Heading 2")
                 _add_ai_export_inline_markdown(p, line[3:], font_name=preset["heading2_font"])
             elif line.startswith("# "):
-                p = doc.add_paragraph(style="Heading 1")
-                _add_ai_export_inline_markdown(p, line[2:], font_name=preset["heading1_font"])
+                if answer_only and not doc.paragraphs:
+                    p = doc.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p.paragraph_format.first_line_indent = Pt(0)
+                    p.paragraph_format.keep_with_next = True
+                    set_font(p.add_run(line[2:]), preset["title_size"], preset["accent"], True, preset["title_font"])
+                else:
+                    p = doc.add_paragraph(style="Heading 1")
+                    _add_ai_export_inline_markdown(p, line[2:], font_name=preset["heading1_font"])
             elif re.match(r'^[-*•]\s+', line):
                 p = doc.add_paragraph(style="List Bullet")
                 p.paragraph_format.left_indent = Pt(preset["body_size"] * 2)
@@ -11772,13 +11533,13 @@ def _generate_ai_ask_export_docx(data: dict, layout: str = "legal_standard") -> 
                 p = doc.add_paragraph()
                 _add_ai_export_inline_markdown(p, line.lstrip('> ').strip(), muted=reasoning, font_name=preset["body_font"])
 
-    if (data.get("question") or "").strip():
+    if not answer_only and (data.get("question") or "").strip():
         doc.add_heading(data.get("question_heading") or "问题", level=1)
         add_markdown_block(data["question"])
-    if data.get("answer_heading", "回答"):
+    if not answer_only and data.get("answer_heading", "回答"):
         doc.add_heading(data.get("answer_heading") or "回答", level=1)
-    add_markdown_block(data["answer"])
-    source_lines = _ai_ask_source_lines(data.get("sources") or [])
+    add_markdown_block(_clean_ai_answer_for_word(data["answer"]) if answer_only else data["answer"])
+    source_lines = [] if answer_only else _ai_ask_source_lines(data.get("sources") or [])
     if source_lines:
         doc.add_heading("回答来源", level=1)
         for line in source_lines:
@@ -11786,7 +11547,7 @@ def _generate_ai_ask_export_docx(data: dict, layout: str = "legal_standard") -> 
             p.paragraph_format.left_indent = Pt(preset["body_size"] * 2)
             p.paragraph_format.first_line_indent = Pt(-preset["body_size"])
             _add_ai_export_inline_markdown(p, line, font_name=preset["body_font"])
-    safe_trace = _safe_research_trace_text(data.get("reasoning"))
+    safe_trace = '' if answer_only else _safe_research_trace_text(data.get("reasoning"))
     if safe_trace:
         doc.add_heading("检索与核验记录", level=1)
         add_markdown_block(safe_trace, reasoning=True)
@@ -11807,6 +11568,11 @@ def export_ai_ask_message(
     from fastapi.responses import StreamingResponse
     data = _load_ai_ask_export(message_id)
     fmt = (file_format or "md").strip().lower()
+    logo = None
+    if fmt == 'docx':
+        from .appearance import get_appearance, logo_stream
+        stream = logo_stream(get_appearance(get_db))
+        logo = stream.getvalue() if stream else None
     if isinstance(artifact_index, int):
         from .ai_artifacts import extract_artifacts, FORMATS
         artifacts = extract_artifacts(data["answer"])
@@ -11818,7 +11584,7 @@ def export_ai_ask_message(
         filename = artifact["filename"]
         if fmt == "docx":
             filename = filename.rsplit(".", 1)[0] + ".docx"
-            content = _generate_ai_ask_export_docx({**data, "answer": artifact["content"], "question": "", "answer_heading": "", "sources": [], "reasoning": "", "artifact_only": True}, layout=layout)
+            content = _generate_ai_ask_export_docx({**data, "answer": artifact["content"], "question": "", "answer_heading": "", "sources": [], "reasoning": "", "artifact_only": True, "answer_only": True}, layout=layout, logo=logo)
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:
             content = artifact["content"].encode("utf-8")
@@ -11839,259 +11605,10 @@ def export_ai_ask_message(
             headers=headers,
         )
     return StreamingResponse(
-        BytesIO(_generate_ai_ask_export_docx(data, layout=layout)),
+        BytesIO(_generate_ai_ask_export_docx({**data, 'answer_only': True}, layout=layout, logo=logo)),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers=headers,
     )
-
-
-@app.get("/api/research-projects")
-def list_research_projects():
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM research_projects ORDER BY updated_at DESC, id DESC").fetchall()
-    projects = [_row_to_project(r, conn) for r in rows]
-    conn.close()
-    return {"projects": projects}
-
-
-@app.post("/api/research-projects")
-def create_research_project(payload: ResearchProjectPayload):
-    if not payload.name.strip():
-        raise HTTPException(status_code=400, detail="项目名称不能为空")
-    now = datetime.datetime.now().isoformat()
-    conn = get_db()
-    cur = conn.execute(
-        """
-        INSERT INTO research_projects (case_id, name, client, case_info, issues, status, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (payload.case_id, payload.name.strip(), payload.client, payload.case_info, payload.issues, payload.status or "active", payload.notes, now, now)
-    )
-    conn.commit()
-    project_id = cur.lastrowid
-    detail = _project_detail(conn, project_id)
-    conn.close()
-    return detail
-
-
-@app.get("/api/research-projects/{project_id}")
-def get_research_project(project_id: int):
-    conn = get_db()
-    detail = _project_detail(conn, project_id)
-    conn.close()
-    return detail
-
-
-@app.put("/api/research-projects/{project_id}")
-def update_research_project(project_id: int, payload: ResearchProjectPayload):
-    now = datetime.datetime.now().isoformat()
-    conn = get_db()
-    cur = conn.execute(
-        """
-        UPDATE research_projects
-        SET case_id=COALESCE(?, case_id), name=?, client=?, case_info=?, issues=?, status=?, notes=?, updated_at=?
-        WHERE id=?
-        """,
-        (payload.case_id, payload.name.strip(), payload.client, payload.case_info, payload.issues, payload.status or "active", payload.notes, now, project_id)
-    )
-    if cur.rowcount == 0:
-        conn.close()
-        raise HTTPException(status_code=404, detail="研究项目不存在")
-    conn.commit()
-    detail = _project_detail(conn, project_id)
-    conn.close()
-    return detail
-
-
-@app.delete("/api/research-projects/{project_id}")
-def delete_research_project(project_id: int):
-    conn = get_db()
-    conn.execute("DELETE FROM research_projects WHERE id=?", (project_id,))
-    conn.commit()
-    conn.close()
-    return {"success": True}
-
-
-@app.get("/api/case-research/cases")
-def list_case_research_cases(q: str = "", limit: int = 500):
-    query = (q or "").strip()
-    limit = max(20, min(int(limit or 500), 1000))
-    conn = get_db()
-    where = ["COALESCE(source_status, 'active')='active'", "COALESCE(case_kind, 'ordinary')<>'series_child'"]
-    params: list = []
-    if query:
-        like = f"%{escape_like_pattern(query)}%"
-        where.append(
-            """(
-                title LIKE ? ESCAPE '\\'
-                OR case_type LIKE ? ESCAPE '\\'
-                OR memo LIKE ? ESCAPE '\\'
-                OR EXISTS (
-                    SELECT 1 FROM case_manager_parties p
-                    WHERE p.case_id=case_manager_cases.id AND p.name LIKE ? ESCAPE '\\'
-                )
-                OR EXISTS (
-                    SELECT 1 FROM case_manager_case_numbers n
-                    WHERE n.case_id=case_manager_cases.id AND n.case_no LIKE ? ESCAPE '\\'
-                )
-                OR EXISTS (
-                    SELECT 1 FROM case_manager_cases sc
-                    WHERE sc.parent_series_id=case_manager_cases.id AND sc.case_kind='series_child'
-                      AND (sc.title LIKE ? ESCAPE '\\' OR sc.series_code LIKE ? ESCAPE '\\'
-                           OR sc.series_display_name LIKE ? ESCAPE '\\' OR sc.memo LIKE ? ESCAPE '\\')
-                )
-                OR EXISTS (
-                    SELECT 1 FROM case_manager_cases sc
-                    JOIN case_manager_parties sp ON sp.case_id=sc.id
-                    WHERE sc.parent_series_id=case_manager_cases.id AND sp.name LIKE ? ESCAPE '\\'
-                )
-                OR EXISTS (
-                    SELECT 1 FROM case_manager_cases sc
-                    JOIN case_manager_case_numbers sn ON sn.case_id=sc.id
-                    WHERE sc.parent_series_id=case_manager_cases.id AND sn.case_no LIKE ? ESCAPE '\\'
-                )
-            )"""
-        )
-        params.extend([like] * 11)
-    rows = conn.execute(
-        f"""
-        SELECT * FROM case_manager_cases
-        WHERE {' AND '.join(where)}
-        ORDER BY updated_at DESC, id DESC
-        LIMIT ?
-        """,
-        (*params, limit),
-    ).fetchall()
-    cases = [_case_to_research_case(conn, r) for r in rows]
-    conn.close()
-    return {"cases": cases}
-
-
-@app.get("/api/case-research/offline-snapshot")
-def case_research_offline_snapshot(limit: int = 500):
-    """案件研究离线快照：案件台账、案件备忘录、关联文章和研究备忘录。"""
-    max_items = max(20, min(int(limit or 500), 1000))
-    conn = get_db()
-    rows = conn.execute(
-        """
-        SELECT * FROM case_manager_cases
-        WHERE COALESCE(source_status, 'active')='active'
-          AND COALESCE(case_kind, 'ordinary')<>'series_child'
-        ORDER BY updated_at DESC, id DESC
-        LIMIT ?
-        """,
-        (max_items,),
-    ).fetchall()
-    cases = []
-    details = {}
-    project_to_case = {}
-    memo_to_case = {}
-    linked_articles = {}
-    for row in rows:
-        case_item = _case_to_research_case(conn, row)
-        cases.append(case_item)
-        detail = _case_research_detail_for_offline(conn, row["id"])
-        details[str(row["id"])] = detail
-        project_id = detail.get("project", {}).get("id")
-        if project_id:
-            project_to_case[str(project_id)] = row["id"]
-        for memo in detail.get("memos", []) or []:
-            memo_to_case[str(memo.get("id"))] = row["id"]
-        for article in detail.get("articles", []) or []:
-            linked_articles[str(article.get("id"))] = article
-    conn.commit()
-    conn.close()
-    return {
-        "version": 1,
-        "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
-        "limit": max_items,
-        "cases": cases,
-        "details": details,
-        "project_to_case": project_to_case,
-        "memo_to_case": memo_to_case,
-        "linked_articles": linked_articles,
-    }
-
-
-@app.get("/api/case-research/cases/{case_id}")
-def get_case_research(case_id: int):
-    conn = get_db()
-    detail = _case_research_detail(conn, case_id)
-    conn.commit()
-    conn.close()
-    return detail
-
-
-@app.post("/api/case-research/cases/{case_id}/articles/{article_id}")
-def add_article_to_case_research(case_id: int, article_id: int, added_from: str = Form(default="manual")):
-    now = datetime.datetime.now().isoformat()
-    conn = get_db()
-    project_id = _ensure_case_research_project(conn, case_id)
-    if not conn.execute("SELECT id FROM articles WHERE id=?", (article_id,)).fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="文章不存在")
-    conn.execute(
-        "INSERT OR IGNORE INTO research_project_articles (project_id, article_id, added_from, created_at) VALUES (?, ?, ?, ?)",
-        (project_id, article_id, added_from or "manual", now),
-    )
-    conn.execute("UPDATE research_projects SET updated_at=? WHERE id=?", (now, project_id))
-    conn.commit()
-    conn.close()
-    return {"success": True, "project_id": project_id}
-
-
-@app.post("/api/case-research/cases/{case_id}/questions/import")
-def import_question_to_case_research(case_id: int, payload: LinkedAskQuestionPayload):
-    """把知识库 AI增强关联到案件研究；source_ref 保证重复点击不会产生副本。"""
-    question = (payload.question or "").strip()
-    answer = (payload.answer or "").strip()
-    if not question or not answer:
-        raise HTTPException(status_code=400, detail="问题和回答不能为空")
-    now = datetime.datetime.now().isoformat()
-    created_at = (payload.created_at or "").strip() or now
-    source_ref = (payload.source_ref or "").strip()[:160]
-    conn = get_db()
-    project_id = _ensure_case_research_project(conn, case_id)
-    existing = None
-    if source_ref:
-        existing = conn.execute(
-            "SELECT id FROM research_project_questions WHERE project_id=? AND source_ref=?",
-            (project_id, source_ref),
-        ).fetchone()
-    if existing:
-        question_id = int(existing["id"])
-    else:
-        cur = conn.execute(
-            """
-            INSERT INTO research_project_questions
-            (project_id, question, answer, model, sources_json, cited_sources_json,
-             reasoning, is_reasoning_model, source_type, source_ref, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'knowledge_ai_ask', ?, ?)
-            """,
-            (
-                project_id,
-                question,
-                answer,
-                (payload.model or "").strip(),
-                json.dumps(payload.sources or [], ensure_ascii=False),
-                json.dumps(payload.cited_sources or [], ensure_ascii=False),
-                payload.reasoning or "",
-                int(bool(payload.is_reasoning_model)),
-                source_ref,
-                created_at,
-            ),
-        )
-        question_id = int(cur.lastrowid)
-        conn.execute("UPDATE research_projects SET updated_at=? WHERE id=?", (now, project_id))
-    conn.commit()
-    conn.close()
-    return {
-        "success": True,
-        "case_id": case_id,
-        "project_id": project_id,
-        "question_id": question_id,
-        "already_linked": bool(existing),
-    }
 
 
 def _save_timeline_entry(table: str, project_id: int, payload: CaseTimelineEntryPayload, entry_id: int = 0, resource_edit=None) -> dict:
@@ -12159,143 +11676,6 @@ register_case_entry_resource_routes(app, get_db, UPLOAD_DIR / 'case-entry-resour
                                     _save_timeline_entry, CaseTimelineEntryPayload)
 
 
-@app.post("/api/case-research/projects/{project_id}/ledgers")
-def create_case_ledger(project_id: int, payload: CaseTimelineEntryPayload):
-    return _save_timeline_entry("research_case_ledgers", project_id, payload)
-
-
-@app.put("/api/case-research/ledgers/{entry_id}")
-def update_case_ledger(entry_id: int, payload: CaseTimelineEntryPayload):
-    conn = get_db()
-    row = conn.execute("SELECT project_id FROM research_case_ledgers WHERE id=?", (entry_id,)).fetchone()
-    conn.close()
-    if not row:
-        raise HTTPException(status_code=404, detail="台账不存在")
-    return _save_timeline_entry("research_case_ledgers", row["project_id"], payload, entry_id)
-
-
-@app.delete("/api/case-research/ledgers/{entry_id}")
-def delete_case_ledger(entry_id: int):
-    return _delete_timeline_entry("research_case_ledgers", entry_id)
-
-
-@app.post("/api/case-research/projects/{project_id}/memo-entries")
-def create_case_memo_entry(project_id: int, payload: CaseTimelineEntryPayload):
-    return _save_timeline_entry("research_case_memo_entries", project_id, payload)
-
-
-@app.put("/api/case-research/memo-entries/{entry_id}")
-def update_case_memo_entry(entry_id: int, payload: CaseTimelineEntryPayload):
-    conn = get_db()
-    row = conn.execute("SELECT project_id FROM research_case_memo_entries WHERE id=?", (entry_id,)).fetchone()
-    conn.close()
-    if not row:
-        raise HTTPException(status_code=404, detail="备忘录不存在")
-    return _save_timeline_entry("research_case_memo_entries", row["project_id"], payload, entry_id)
-
-
-@app.delete("/api/case-research/memo-entries/{entry_id}")
-def delete_case_memo_entry(entry_id: int):
-    return _delete_timeline_entry("research_case_memo_entries", entry_id)
-
-
-@app.post("/api/research-projects/{project_id}/articles/{article_id}")
-def add_article_to_research_project(project_id: int, article_id: int, added_from: str = Form(default="manual")):
-    now = datetime.datetime.now().isoformat()
-    conn = get_db()
-    if not conn.execute("SELECT id FROM research_projects WHERE id=?", (project_id,)).fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="研究项目不存在")
-    if not conn.execute("SELECT id FROM articles WHERE id=?", (article_id,)).fetchone():
-        conn.close()
-        raise HTTPException(status_code=404, detail="文章不存在")
-    conn.execute(
-        "INSERT OR IGNORE INTO research_project_articles (project_id, article_id, added_from, created_at) VALUES (?, ?, ?, ?)",
-        (project_id, article_id, added_from or "manual", now)
-    )
-    conn.execute("UPDATE research_projects SET updated_at=? WHERE id=?", (now, project_id))
-    conn.commit()
-    conn.close()
-    return {"success": True}
-
-
-@app.delete("/api/research-projects/{project_id}/articles/{article_id}")
-def remove_article_from_research_project(project_id: int, article_id: int):
-    conn = get_db()
-    conn.execute("DELETE FROM research_project_articles WHERE project_id=? AND article_id=?", (project_id, article_id))
-    conn.commit()
-    conn.close()
-    return {"success": True}
-
-
-@app.get("/api/research-projects/{project_id}/questions")
-def get_research_project_questions(project_id: int):
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM research_project_questions WHERE project_id=? ORDER BY created_at ASC",
-        (project_id,)
-    ).fetchall()
-    conn.close()
-    result = []
-    for r in rows:
-        item = dict(r)
-        item["sources"] = json.loads(item.pop("sources_json") or "[]")
-        item["cited_sources"] = json.loads(item.pop("cited_sources_json") or "[]")
-        item["is_reasoning_model"] = bool(item.get("is_reasoning_model"))
-        result.append(item)
-    return {"questions": result}
-
-
-def _load_research_question_exports(*, project_id: int = 0, question_id: int = 0) -> tuple[dict, list]:
-    """读取案件资料问答；AI增强页关联进来的记录与原生记录使用同一张表。"""
-    conn = get_db()
-    if question_id:
-        question_row = conn.execute(
-            "SELECT * FROM research_project_questions WHERE id=?", (question_id,)
-        ).fetchone()
-        if not question_row:
-            conn.close()
-            raise HTTPException(status_code=404, detail="案件资料问答记录不存在")
-        project_id = int(question_row["project_id"])
-    project_row = conn.execute(
-        """
-        SELECT rp.*, cc.title AS case_title
-        FROM research_projects rp
-        LEFT JOIN case_manager_cases cc ON cc.id=rp.case_id
-        WHERE rp.id=?
-        """,
-        (project_id,),
-    ).fetchone()
-    if not project_row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="案件研究不存在")
-    if question_id:
-        rows = [question_row]
-    else:
-        rows = conn.execute(
-            "SELECT * FROM research_project_questions WHERE project_id=? ORDER BY created_at ASC, id ASC",
-            (project_id,),
-        ).fetchall()
-    conn.close()
-    records = []
-    for row in rows:
-        item = dict(row)
-        try:
-            sources = json.loads(item.get("cited_sources_json") or "[]") or []
-        except (TypeError, ValueError):
-            sources = []
-        if not sources:
-            try:
-                sources = json.loads(item.get("sources_json") or "[]") or []
-            except (TypeError, ValueError):
-                sources = []
-        item["sources"] = sources
-        records.append(item)
-    if not records:
-        raise HTTPException(status_code=404, detail="该案件尚无可导出的问答记录")
-    return dict(project_row), records
-
-
 def _build_research_questions_export_markdown(project: dict, records: list) -> str:
     case_title = project.get("case_title") or project.get("name") or "未命名案件"
     lines = [
@@ -12348,49 +11728,6 @@ def _research_questions_docx(project: dict, records: list, layout: str = "legal_
     }, layout=layout)
 
 
-def _research_question_export_response(project: dict, records: list, file_format: str, layout: str = "legal_standard"):
-    from fastapi.responses import StreamingResponse
-
-    fmt = (file_format or "md").strip().lower()
-    if fmt not in {"md", "docx"}:
-        raise HTTPException(status_code=400, detail="仅支持 md 和 docx 格式")
-    case_title = project.get("case_title") or project.get("name") or "案件"
-    suffix = "全部案件资料问答" if len(records) > 1 else str(records[0].get("question") or "案件资料问答")[:48]
-    filename = f"{_safe_export_filename(case_title, '案件')}-{_safe_export_filename(suffix, '案件资料问答')}.{fmt}"
-    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
-    if fmt == "md":
-        return Response(
-            content=_utf8_bom_markdown_bytes(_build_research_questions_export_markdown(project, records)),
-            media_type="text/markdown",
-            headers=headers,
-        )
-    return StreamingResponse(
-        BytesIO(_research_questions_docx(project, records, layout=layout)),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers=headers,
-    )
-
-
-@app.get("/api/research-project-questions/{question_id}/export")
-def export_research_project_question(
-    question_id: int,
-    file_format: str = Query("md", alias="format"),
-    layout: str = Query("legal_standard"),
-):
-    project, records = _load_research_question_exports(question_id=question_id)
-    return _research_question_export_response(project, records, file_format, layout=layout)
-
-
-@app.get("/api/research-projects/{project_id}/questions/export")
-def export_research_project_questions(
-    project_id: int,
-    file_format: str = Query("md", alias="format"),
-    layout: str = Query("legal_standard"),
-):
-    project, records = _load_research_question_exports(project_id=project_id)
-    return _research_question_export_response(project, records, file_format, layout=layout)
-
-
 async def _answer_with_paragraphs(question: str, model: str, conn, article_ids: list = None, project: dict = None):
     paragraphs = search_paragraphs_for_qa(question, conn, top_k=14, article_ids=article_ids)
     context_text, sources, paragraph_map = build_paragraph_context(paragraphs)
@@ -12437,226 +11774,6 @@ async def _answer_with_paragraphs(question: str, model: str, conn, article_ids: 
         "cited_sources": cited_sources,
         "model_used": "workbuddy" if model == "workbuddy" else actual_model,
     }
-
-
-@app.post("/api/research-projects/{project_id}/ask")
-async def ask_research_project(project_id: int, question: str = Form(...), model: str = Form("")):
-    if not question.strip():
-        raise HTTPException(status_code=400, detail="问题不能为空")
-    if model not in ALLOWED_MODELS:
-        model = DEFAULT_AI_MODEL
-    conn = get_db()
-    project_row = conn.execute("SELECT * FROM research_projects WHERE id=?", (project_id,)).fetchone()
-    if not project_row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="研究项目不存在")
-    article_ids = _get_project_article_ids(conn, project_id)
-    conn.close()
-    if not article_ids:
-        raise HTTPException(status_code=400, detail="当前案件尚未关联文章，请先添加案件资料")
-
-    # 案件资料问答与主知识库 AI增强共用同一套检索、提示词、续写和引用核验流程，
-    # 仅把检索范围限定为当前案件关联的全部文章。
-    data = await ask_question(
-        question=question.strip(),
-        model=model,
-        article_ids=",".join(str(article_id) for article_id in article_ids),
-        source_mode="hybrid",
-        case_search=False,
-    )
-    now = datetime.datetime.now().isoformat()
-    conn = get_db()
-    cur = conn.execute(
-        """
-        INSERT INTO research_project_questions
-        (project_id, question, answer, model, sources_json, cited_sources_json,
-         reasoning, is_reasoning_model, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            project_id,
-            question.strip(),
-            data["answer"],
-            data["model_used"],
-            json.dumps(data.get("sources", []), ensure_ascii=False),
-            json.dumps(data.get("cited_sources", []), ensure_ascii=False),
-            data.get("reasoning") or "",
-            int(bool(data.get("is_reasoning_model"))),
-            now,
-        )
-    )
-    conn.execute("UPDATE research_projects SET updated_at=? WHERE id=?", (now, project_id))
-    conn.commit()
-    data["id"] = cur.lastrowid
-    data["question"] = question.strip()
-    data["created_at"] = now
-    conn.close()
-    return data
-
-
-def _memo_markdown(project: dict, question: str, answer: str, cited_sources: list, sources: list) -> str:
-    refs = cited_sources or []
-    src_lines = []
-    for i, s in enumerate(sources or [], 1):
-        src_lines.append(f"{i}. 《{s.get('title','')}》{(' - ' + s.get('source','')) if s.get('source') else ''}")
-    quote_lines = []
-    for i, cs in enumerate(refs, 1):
-        para = f"第 {cs.get('paragraph_index')} 段" if cs.get("paragraph_index") else "文章级引用"
-        quote_lines.append(f"{i}. 《{cs.get('title','')}》{para}：{cs.get('quote') or cs.get('excerpt','')}")
-    return f"""# {project.get('name', '研究项目')} 检索备忘录
-
-## 检索问题
-{question or '（未填写）'}
-
-## 检索范围
-项目资料库；客户/案件：{project.get('client','')} {project.get('case_info','')}
-
-## 核心结论
-{answer}
-
-## 依据与引用
-{chr(10).join(quote_lines) if quote_lines else '暂无可验证引用。'}
-
-## 争议焦点分析
-{project.get('issues') or '暂无争议焦点，可在项目信息中补充。'}
-
-## 风险提示
-以上结论基于当前项目已绑定资料生成；若涉及最新法规、地方裁判口径或未入库材料，应继续补充检索。
-
-## 后续检索建议
-- 补充同类案由的高院/最高院案例。
-- 检索最新司法解释、会议纪要和主管部门规范性文件。
-- 对相反观点和例外情形进行二次核验。
-
-## 参考资料清单
-{chr(10).join(src_lines) if src_lines else '暂无参考资料。'}
-"""
-
-
-@app.post("/api/research-projects/{project_id}/memo/generate")
-async def generate_research_memo(project_id: int, payload: ResearchMemoPayload):
-    conn = get_db()
-    project_row = conn.execute("SELECT * FROM research_projects WHERE id=?", (project_id,)).fetchone()
-    if not project_row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="研究项目不存在")
-    project = dict(project_row)
-    question = (payload.question or project.get("issues") or project.get("name") or "项目法律问题").strip()
-    article_ids = _get_project_article_ids(conn, project_id)
-    try:
-        data = await _answer_with_paragraphs(question, ai_config_module.effective_purpose_model("research_memo"), conn, article_ids=article_ids, project=project)
-        answer = data["answer"]
-        sources = data.get("sources", [])
-        cited = data.get("cited_sources", [])
-    except Exception as e:
-        answer = f"自动分析暂不可用：{e}"
-        sources, cited = [], []
-    markdown = payload.markdown or _memo_markdown(project, question, answer, cited, sources)
-    now = datetime.datetime.now().isoformat()
-    title = payload.title or f"{project.get('name','研究项目')}检索备忘录"
-    cur = conn.execute(
-        """
-        INSERT INTO research_memos (project_id, title, question, markdown, sources_json, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """,
-        (project_id, title, question, markdown, json.dumps(cited or sources, ensure_ascii=False), now, now)
-    )
-    conn.commit()
-    memo_id = cur.lastrowid
-    conn.close()
-    return {"id": memo_id, "project_id": project_id, "title": title, "question": question, "markdown": markdown, "sources": cited or sources, "created_at": now, "updated_at": now}
-
-
-@app.get("/api/research-projects/{project_id}/memos")
-def list_research_memos(project_id: int):
-    conn = get_db()
-    rows = conn.execute("SELECT id, project_id, title, question, created_at, updated_at FROM research_memos WHERE project_id=? ORDER BY updated_at DESC", (project_id,)).fetchall()
-    conn.close()
-    return {"memos": [dict(r) for r in rows]}
-
-
-@app.get("/api/research-memos/{memo_id}")
-def get_research_memo(memo_id: int):
-    conn = get_db()
-    row = conn.execute("SELECT * FROM research_memos WHERE id=?", (memo_id,)).fetchone()
-    conn.close()
-    if not row:
-        raise HTTPException(status_code=404, detail="备忘录不存在")
-    data = dict(row)
-    data["sources"] = json.loads(data.pop("sources_json") or "[]")
-    return data
-
-
-@app.put("/api/research-memos/{memo_id}")
-def update_research_memo(memo_id: int, payload: ResearchMemoPayload):
-    now = datetime.datetime.now().isoformat()
-    conn = get_db()
-    cur = conn.execute(
-        "UPDATE research_memos SET title=COALESCE(NULLIF(?, ''), title), question=?, markdown=?, updated_at=? WHERE id=?",
-        (payload.title or "", payload.question or "", payload.markdown or "", now, memo_id)
-    )
-    if cur.rowcount == 0:
-        conn.close()
-        raise HTTPException(status_code=404, detail="备忘录不存在")
-    conn.commit()
-    conn.close()
-    return {"success": True, "updated_at": now}
-
-
-@app.get("/api/research-memos/{memo_id}/download.md")
-def download_research_memo_md(memo_id: int):
-    from fastapi.responses import Response as FastAPIResponse
-    memo = get_research_memo(memo_id)
-    filename = re.sub(r'[\\/:*?"<>|]+', '_', memo["title"]) + ".md"
-    return FastAPIResponse(
-        _utf8_bom_markdown_bytes(memo["markdown"]),
-        media_type="text/markdown",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
-    )
-
-
-def _generate_memo_docx(title: str, markdown: str) -> bytes:
-    from io import BytesIO
-    from docx import Document
-    from docx.shared import Pt
-    from docx.oxml.ns import qn
-    doc = Document()
-    style = doc.styles['Normal']
-    style.font.name = '宋体'
-    style._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-    style.font.size = Pt(11)
-    doc.add_heading(title, level=1)
-    for line in (markdown or "").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith("# "):
-            doc.add_heading(line[2:].strip(), level=1)
-        elif line.startswith("## "):
-            doc.add_heading(line[3:].strip(), level=2)
-        elif re.match(r'^[-*]\s+', line):
-            doc.add_paragraph(re.sub(r'^[-*]\s+', '', line), style='List Bullet')
-        elif re.match(r'^\d+\.\s+', line):
-            doc.add_paragraph(re.sub(r'^\d+\.\s+', '', line), style='List Number')
-        else:
-            doc.add_paragraph(line)
-    buf = BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
-
-
-@app.get("/api/research-memos/{memo_id}/download.docx")
-def download_research_memo_docx(memo_id: int):
-    from io import BytesIO
-    from fastapi.responses import StreamingResponse
-    memo = get_research_memo(memo_id)
-    content = _generate_memo_docx(memo["title"], memo["markdown"])
-    filename = re.sub(r'[\\/:*?"<>|]+', '_', memo["title"]) + ".docx"
-    return StreamingResponse(
-        BytesIO(content),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
-    )
 
 
 def _safe_export_filename(name: str, fallback: str = "未命名") -> str:
@@ -12709,268 +11826,6 @@ def _article_docx_bytes(article: dict, case_title: str = "") -> bytes:
     return buf.getvalue()
 
 
-def _case_articles_docx_bytes(case_title: str, articles: list) -> bytes:
-    from docx import Document
-
-    doc = Document()
-    doc.add_heading(f"{case_title or '案件'}关联文章", level=0)
-    for idx, article in enumerate(articles):
-        if idx:
-            doc.add_page_break()
-        _add_article_to_docx(doc, article, case_title)
-    buf = BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
-
-
-def _case_research_articles(conn, case_id: int) -> tuple:
-    project_id = _ensure_case_research_project(conn, case_id)
-    case = conn.execute("SELECT * FROM case_manager_cases WHERE id=?", (case_id,)).fetchone()
-    articles = [
-        dict(r)
-        for r in conn.execute(
-            """
-            SELECT a.id, a.title, a.content, a.summary, a.source_type, a.source_url,
-                   a.source_filename, a.source_localpath, a.created_at, rpa.created_at AS linked_at
-            FROM research_project_articles rpa
-            JOIN articles a ON a.id = rpa.article_id
-            WHERE rpa.project_id=?
-            ORDER BY rpa.created_at ASC, a.id ASC
-            """,
-            (project_id,),
-        ).fetchall()
-    ]
-    return case, articles
-
-
-def _case_research_timeline_entries(conn, case_id: int, entry_type: str) -> tuple:
-    table_map = {
-        "ledger": "research_case_ledgers",
-        "memo": "research_case_memo_entries",
-    }
-    table = table_map.get(entry_type)
-    if not table:
-        raise HTTPException(status_code=400, detail="记录类型不正确")
-    project_id = _ensure_case_research_project(conn, case_id)
-    case = conn.execute("SELECT * FROM case_manager_cases WHERE id=?", (case_id,)).fetchone()
-    entries = [
-        dict(r)
-        for r in conn.execute(
-            f"""
-            SELECT * FROM {table}
-            WHERE project_id=?
-            ORDER BY COALESCE(NULLIF(happened_at, ''), created_at) DESC, id DESC
-            """,
-            (project_id,),
-        ).fetchall()
-    ]
-    return case, entries
-
-
-def _case_timeline_export_text(content: str) -> str:
-    """Keep readable record paragraphs and source URLs in spreadsheet exports."""
-    if not re.match(r"\s*<(?:p|div|h[1-6]|ul|ol|li|blockquote|pre|table|br|span|strong|b|em|i|u|s|a|code|img|sup|sub)\b", content or "", re.I):
-        return content or ""
-    soup = BeautifulSoup(content, "html.parser")
-    for tag in soup(["script", "style", "noscript"]):
-        tag.decompose()
-    for link in soup.find_all("a", href=True):
-        href = link["href"]
-        if href.startswith(("https://", "http://")) and href not in link.get_text():
-            link.append(f"（{href}）")
-    for br in soup.find_all("br"):
-        br.replace_with("\n")
-    for block in soup.find_all(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "tr", "blockquote", "pre"]):
-        if block.name == "li" and block.get("data-list-label"):
-            block.insert(0, block["data-list-label"] + " ")
-        block.append("\n")
-    return re.sub(r"\n{3,}", "\n\n", soup.get_text()).strip()
-
-
-def _case_timeline_xlsx_bytes(case_title: str, entries: list, label: str) -> bytes:
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = label[:31]
-    headers = ["序号", "案件名称", "时间节点", "标题", "内容", "提交时间", "更新时间"]
-    ws.append(headers)
-    header_fill = PatternFill("solid", fgColor="F3F4F6")
-    header_font = Font(bold=True, color="111827")
-    for cell in ws[1]:
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    if entries:
-        for idx, item in enumerate(entries, 1):
-            ws.append([
-                idx,
-                case_title,
-                item.get("happened_at") or "",
-                item.get("title") or "",
-                _case_timeline_export_text(item.get("content") or ""),
-                item.get("created_at") or "",
-                item.get("updated_at") or "",
-            ])
-    else:
-        ws.append([1, case_title, "", "", "暂无记录", "", ""])
-    widths = [8, 34, 14, 30, 72, 21, 21]
-    for idx, width in enumerate(widths, 1):
-        ws.column_dimensions[get_column_letter(idx)].width = width
-    for row in ws.iter_rows(min_row=2):
-        for cell in row:
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
-    buf = BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return buf.getvalue()
-
-
-@app.get("/api/case-research/cases/{case_id}/articles/export")
-def export_case_research_articles(case_id: int):
-    from fastapi.responses import StreamingResponse
-
-    conn = get_db()
-    case, articles = _case_research_articles(conn, case_id)
-    conn.close()
-    if not articles:
-        raise HTTPException(status_code=404, detail="该案件尚未关联文章")
-    case_title = case["title"] if case else "案件"
-    safe_case = _safe_export_filename(case_title, "案件")
-    if len(articles) <= 2:
-        content = _case_articles_docx_bytes(case_title, articles)
-        filename = f"{safe_case}-关联文章.docx"
-        return StreamingResponse(
-            BytesIO(content),
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
-        )
-    zip_buf = BytesIO()
-    folder = f"{safe_case}-关联文章"
-    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        index_lines = [f"{case_title}关联文章清单", ""]
-        for idx, article in enumerate(articles, 1):
-            title = article.get("title") or f"文章{idx}"
-            docx_name = f"{idx:02d}-{_safe_export_filename(title, f'文章{idx}')}.docx"
-            zf.writestr(f"{folder}/{docx_name}", _article_docx_bytes(article, case_title))
-            index_lines.append(f"{idx}. {title}")
-        zf.writestr(f"{folder}/关联文章清单.txt", "\n".join(index_lines))
-    zip_buf.seek(0)
-    filename = f"{safe_case}-关联文章.zip"
-    return StreamingResponse(
-        zip_buf,
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
-    )
-
-
-@app.get("/api/case-research/cases/{case_id}/ledgers/export")
-def export_case_research_ledgers(case_id: int):
-    from fastapi.responses import StreamingResponse
-
-    conn = get_db()
-    case, entries = _case_research_timeline_entries(conn, case_id, "ledger")
-    conn.commit()
-    conn.close()
-    case_title = case["title"] if case else "案件"
-    content = _case_timeline_xlsx_bytes(case_title, entries, "案件台账")
-    filename = f"{_safe_export_filename(case_title, '案件')}-案件台账.xlsx"
-    return StreamingResponse(
-        BytesIO(content),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
-    )
-
-
-@app.get("/api/case-research/cases/{case_id}/memo-entries/export")
-def export_case_research_memo_entries(case_id: int):
-    from fastapi.responses import StreamingResponse
-
-    conn = get_db()
-    case, entries = _case_research_timeline_entries(conn, case_id, "memo")
-    conn.commit()
-    conn.close()
-    case_title = case["title"] if case else "案件"
-    content = _case_timeline_xlsx_bytes(case_title, entries, "案件备忘录")
-    filename = f"{_safe_export_filename(case_title, '案件')}-案件备忘录.xlsx"
-    return StreamingResponse(
-        BytesIO(content),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
-    )
-
-
-def _watch_task_to_dict(row) -> dict:
-    data = dict(row)
-    for key in ("domains", "keywords", "sources"):
-        try:
-            data[key] = json.loads(data.get(key) or "[]")
-        except Exception:
-            data[key] = []
-    return data
-
-
-@app.get("/api/authority-watch/tasks")
-def list_authority_watch_tasks():
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM authority_watch_tasks ORDER BY updated_at DESC").fetchall()
-    tasks = [_watch_task_to_dict(r) for r in rows]
-    if not tasks:
-        now = datetime.datetime.now().isoformat()
-        conn.execute(
-            "INSERT INTO authority_watch_tasks (name, domains, keywords, sources, frequency_hours, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
-            ("默认权威来源监控", json.dumps(["公司法", "破产法", "建设工程"], ensure_ascii=False), json.dumps(["司法解释", "指导性案例", "裁判规则"], ensure_ascii=False), json.dumps([], ensure_ascii=False), 24, now, now)
-        )
-        conn.commit()
-        rows = conn.execute("SELECT * FROM authority_watch_tasks ORDER BY updated_at DESC").fetchall()
-        tasks = [_watch_task_to_dict(r) for r in rows]
-    conn.close()
-    return {"tasks": tasks}
-
-
-@app.post("/api/authority-watch/tasks")
-def create_authority_watch_task(payload: AuthorityWatchTaskPayload):
-    now = datetime.datetime.now().isoformat()
-    conn = get_db()
-    cur = conn.execute(
-        "INSERT INTO authority_watch_tasks (name, domains, keywords, sources, frequency_hours, enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (payload.name, json.dumps(payload.domains, ensure_ascii=False), json.dumps(payload.keywords, ensure_ascii=False), json.dumps(payload.sources, ensure_ascii=False), payload.frequency_hours or 24, int(payload.enabled), now, now)
-    )
-    conn.commit()
-    task = _watch_task_to_dict(conn.execute("SELECT * FROM authority_watch_tasks WHERE id=?", (cur.lastrowid,)).fetchone())
-    conn.close()
-    return task
-
-
-@app.put("/api/authority-watch/tasks/{task_id}")
-def update_authority_watch_task(task_id: int, payload: AuthorityWatchTaskPayload):
-    now = datetime.datetime.now().isoformat()
-    conn = get_db()
-    cur = conn.execute(
-        "UPDATE authority_watch_tasks SET name=?, domains=?, keywords=?, sources=?, frequency_hours=?, enabled=?, updated_at=? WHERE id=?",
-        (payload.name, json.dumps(payload.domains, ensure_ascii=False), json.dumps(payload.keywords, ensure_ascii=False), json.dumps(payload.sources, ensure_ascii=False), payload.frequency_hours or 24, int(payload.enabled), now, task_id)
-    )
-    if cur.rowcount == 0:
-        conn.close()
-        raise HTTPException(status_code=404, detail="监控任务不存在")
-    conn.commit()
-    task = _watch_task_to_dict(conn.execute("SELECT * FROM authority_watch_tasks WHERE id=?", (task_id,)).fetchone())
-    conn.close()
-    return task
-
-
-@app.delete("/api/authority-watch/tasks/{task_id}")
-def delete_authority_watch_task(task_id: int):
-    conn = get_db()
-    conn.execute("DELETE FROM authority_watch_tasks WHERE id=?", (task_id,))
-    conn.commit()
-    conn.close()
-    return {"success": True}
-
-
 def _fetch_watch_candidates(source_names: list, keywords: list, domains: list) -> list:
     source_pool = DEFAULT_SOURCES
     if source_names:
@@ -13009,89 +11864,6 @@ def _fetch_watch_candidates(source_names: list, keywords: list, domains: list) -
             seen.add(key)
             unique.append(c)
     return unique[:50]
-
-
-@app.post("/api/authority-watch/tasks/{task_id}/run")
-async def run_authority_watch_task(task_id: int):
-    """兼容旧入口，统一复用探索雷达流水线。"""
-    return await _run_radar_task(task_id)
-
-
-@app.get("/api/authority-watch/results")
-def list_authority_watch_results(status: str = ""):
-    conn = get_db()
-    where = []
-    if status == "unread":
-        where.append("is_read=0 AND is_ignored=0")
-    elif status == "importable":
-        where.append("is_imported=0 AND is_ignored=0")
-    elif status == "imported":
-        where.append("is_imported=1")
-    elif status == "ignored":
-        where.append("is_ignored=1")
-    sql = "SELECT * FROM authority_watch_results"
-    if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY created_at DESC LIMIT 200"
-    rows = conn.execute(sql).fetchall()
-    conn.close()
-    return {"results": [dict(r) for r in rows]}
-
-
-@app.post("/api/authority-watch/results/{result_id}/import")
-def import_authority_watch_result(result_id: int):
-    conn = get_db()
-    row = conn.execute("SELECT * FROM authority_watch_results WHERE id=?", (result_id,)).fetchone()
-    if not row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="监控结果不存在")
-    if row["verification_level"] == "structured_data" or str(row["url"] or "").startswith("finchina://"):
-        conn.close()
-        raise HTTPException(status_code=400, detail="企业结构化情报用于风险跟踪，不作为法律操作系统正文入库")
-    if row["is_imported"] and row["imported_article_id"]:
-        conn.close()
-        return {"success": True, "article_id": row["imported_article_id"], "already_imported": True}
-    conn.close()
-    try:
-        article_data = fetch_webpage(row["url"])
-        content = article_data.get("content") or row["body_text"] or row["summary"] or row["title"]
-        title = article_data.get("title") or row["title"]
-    except Exception:
-        content = row["body_text"] or row["summary"] or row["title"]
-        title = row["title"]
-    domains = classify_domains(title + " " + _plain_article_text(content))
-    if domains == ["综合法律"]:
-        domains = [row["domain"]] if row["domain"] else []
-    summary = extract_summary(_plain_article_text(content))
-    try:
-        article_id = save_article(title, content, summary, domains, "url", source_url=row["url"], tags=[row["source_name"]] if row["source_name"] else [])
-    except ValueError:
-        with get_db() as conn2:
-            existing = conn2.execute("SELECT id FROM articles WHERE source_url=?", (row["url"],)).fetchone()
-            article_id = existing["id"] if existing else None
-    conn = get_db()
-    conn.execute(
-        "UPDATE authority_watch_results SET is_imported=1, imported_article_id=?, is_read=1 WHERE id=?",
-        (article_id, result_id)
-    )
-    conn.commit()
-    conn.close()
-    if article_id:
-        article_text = _plain_article_text(content)
-        if is_meaningful_article_text(article_text, min_len=80):
-            asyncio.get_event_loop().create_task(
-                _generate_and_store_ai_summary(article_id, title, article_text, summary)
-            )
-    return {"success": True, "article_id": article_id}
-
-
-@app.post("/api/authority-watch/results/{result_id}/add-to-project")
-def add_watch_result_to_project(result_id: int, project_id: int = Form(...)):
-    imported = import_authority_watch_result(result_id)
-    article_id = imported.get("article_id")
-    if not article_id:
-        raise HTTPException(status_code=500, detail="入库失败，无法加入项目")
-    return add_article_to_research_project(project_id, article_id, added_from="authority_watch")
 
 
 class NationalLawSearchPayload(BaseModel):
@@ -23919,7 +22691,7 @@ async def batch_radar_inbox_action(request: Request):
             results.append({"id": result_id, "status": "failed", "message": "仅正文已验证内容可批量入库"})
             continue
         try:
-            imported = import_authority_watch_result(result_id)
+            imported = _authority_watch_routes.import_result(result_id)
             results.append({"id": result_id, "status": "duplicate" if imported.get("already_imported") else "imported", "article_id": imported.get("article_id")})
         except Exception as exc:
             results.append({"id": result_id, "status": "failed", "message": str(exc)[:300]})
@@ -24787,6 +23559,41 @@ register_ask_presets(app, get_db, ALLOWED_MODELS)
 # Knowledge article workbooks share the article indexing/invalidation contract.
 from .article_spreadsheets import register_article_spreadsheet_routes
 register_article_spreadsheet_routes(app, get_db, UPLOAD_DIR, FRONTEND_DIR, rebuild_article_paragraphs, mark_article_claims_needs_review)
+
+_research_routes = create_research_router(
+    lambda: get_db(),
+    timeline_entry_payload=CaseTimelineEntryPayload,
+    ensure_case_research_project=_ensure_case_research_project,
+    case_client_names=_case_client_names,
+    timeline_public_entry=_timeline_public_entry,
+    save_timeline_entry=_save_timeline_entry,
+    delete_timeline_entry=_delete_timeline_entry,
+    escape_like_pattern=escape_like_pattern,
+    resolve_model=lambda model: model if model in ALLOWED_MODELS else DEFAULT_AI_MODEL,
+    ask_question=lambda **kwargs: ask_question(**kwargs),
+    answer_with_paragraphs=_answer_with_paragraphs,
+    build_questions_markdown=_build_research_questions_export_markdown,
+    render_questions_docx=_research_questions_docx,
+    safe_export_filename=_safe_export_filename,
+    utf8_bom_markdown_bytes=_utf8_bom_markdown_bytes,
+    add_article_to_docx=_add_article_to_docx,
+    article_docx_bytes=_article_docx_bytes,
+)
+app.include_router(_research_routes.router)
+
+_authority_watch_routes = create_authority_watch_router(
+    lambda: get_db(),
+    run_radar_task=lambda task_id: _run_radar_task(task_id),
+    fetch_webpage=lambda url: fetch_webpage(url),
+    plain_article_text=_plain_article_text,
+    classify_domains=classify_domains,
+    extract_summary=extract_summary,
+    save_article=save_article,
+    is_meaningful_article_text=is_meaningful_article_text,
+    generate_and_store_ai_summary=lambda *args: _generate_and_store_ai_summary(*args),
+    add_article_to_research_project=_research_routes.add_article_to_project,
+)
+app.include_router(_authority_watch_routes.router)
 
 # Install last so timing includes every application middleware and body transfer.
 install_performance_monitor(app)

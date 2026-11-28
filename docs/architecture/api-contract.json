@@ -494,42 +494,42 @@
     {
       "method": "GET",
       "path": "/api/authority-watch/results",
-      "source": "backend/main.py"
+      "source": "backend/authority_watch_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/authority-watch/results/{result_id}/add-to-project",
-      "source": "backend/main.py"
+      "source": "backend/authority_watch_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/authority-watch/results/{result_id}/import",
-      "source": "backend/main.py"
+      "source": "backend/authority_watch_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/authority-watch/tasks",
-      "source": "backend/main.py"
+      "source": "backend/authority_watch_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/authority-watch/tasks",
-      "source": "backend/main.py"
+      "source": "backend/authority_watch_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/authority-watch/tasks/{task_id}",
-      "source": "backend/main.py"
+      "source": "backend/authority_watch_routes.py"
     },
     {
       "method": "PUT",
       "path": "/api/authority-watch/tasks/{task_id}",
-      "source": "backend/main.py"
+      "source": "backend/authority_watch_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/authority-watch/tasks/{task_id}/run",
-      "source": "backend/main.py"
+      "source": "backend/authority_watch_routes.py"
     },
     {
       "method": "GET",
@@ -1074,6 +1074,11 @@
     {
       "method": "POST",
       "path": "/api/case-manager/cases/{case_id}/local-files/ask",
+      "source": "backend/case_files.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-manager/cases/{case_id}/local-files/citation-preview",
       "source": "backend/case_files.py"
     },
     {
@@ -2094,22 +2099,22 @@
     {
       "method": "GET",
       "path": "/api/case-research/cases",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/case-research/cases/{case_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/case-research/cases/{case_id}/articles/export",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/case-research/cases/{case_id}/articles/{article_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",
@@ -2119,52 +2124,52 @@
     {
       "method": "GET",
       "path": "/api/case-research/cases/{case_id}/ledgers/export",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/case-research/cases/{case_id}/memo-entries/export",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/case-research/cases/{case_id}/questions/import",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/case-research/ledgers/{entry_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "PUT",
       "path": "/api/case-research/ledgers/{entry_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/case-research/memo-entries/{entry_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "PUT",
       "path": "/api/case-research/memo-entries/{entry_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/case-research/offline-snapshot",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/case-research/projects/{project_id}/ledgers",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/case-research/projects/{project_id}/memo-entries",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",
@@ -2294,6 +2299,11 @@
     {
       "method": "GET",
       "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-preview",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "POST",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-purge",
       "source": "backend/case_workflows.py"
     },
     {
@@ -3844,87 +3854,87 @@
     {
       "method": "GET",
       "path": "/api/research-memos/{memo_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "PUT",
       "path": "/api/research-memos/{memo_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/research-memos/{memo_id}/download.docx",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/research-memos/{memo_id}/download.md",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/research-project-questions/{question_id}/export",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/research-projects",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/research-projects",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/research-projects/{project_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/research-projects/{project_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "PUT",
       "path": "/api/research-projects/{project_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "DELETE",
       "path": "/api/research-projects/{project_id}/articles/{article_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/research-projects/{project_id}/articles/{article_id}",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/research-projects/{project_id}/ask",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",
       "path": "/api/research-projects/{project_id}/memo/generate",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/research-projects/{project_id}/memos",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/research-projects/{project_id}/questions",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "GET",
       "path": "/api/research-projects/{project_id}/questions/export",
-      "source": "backend/main.py"
+      "source": "backend/research_routes.py"
     },
     {
       "method": "POST",

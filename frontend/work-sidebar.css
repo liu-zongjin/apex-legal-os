@@ -92,13 +92,6 @@
 
   .work-sidebar-button svg {
     display: block;
-    width: 20px;
-    height: 20px;
-  }
-
-  .work-sidebar-button svg [stroke]:not([stroke="none"]) {
-    stroke-width: 1.35px;
-    vector-effect: non-scaling-stroke;
   }
 
   .work-sidebar-button[data-work-action="home"] {

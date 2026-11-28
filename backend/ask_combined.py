@@ -40,6 +40,22 @@ def _escape_like(value):
     return str(value or "").replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _evidence_spans(text, limit=800):
+    """Keep each citation within one contiguous piece of supplied source text."""
+    for section in re.split(r'\n\n…（相关段落分隔）…\n\n', str(text or '')):
+        start = 0
+        while start < len(section):
+            end = min(start + limit, len(section))
+            if end < len(section):
+                boundary = section.rfind('\n', start + limit // 2, end)
+                if boundary > start:
+                    end = boundary + 1
+            span = section[start:end].strip()
+            if span:
+                yield span
+            start = end
+
+
 def _ids_by_tags(conn, names):
     """Articles carrying at least one of the given tags (same rule as tag routes)."""
     wanted = {str(name) for name in names if str(name).strip()}
@@ -111,16 +127,18 @@ def knowledge_evidence(question, conn, scope, budget, progress=None):
     items = []
     for article in articles:
         body = _clip(article.get("content") or "", share)
+        body = body.replace("\n…（本次因篇幅只提供上述原文）", "")
         if not body:
             continue
-        block = f"《{article.get('title') or '未命名文章'}》（来源：{article.get('source') or '本地知识库'}）\n{body}"
-        items.append({
+        for span in _evidence_spans(body):
+            block = f"《{article.get('title') or '未命名文章'}》（来源：{article.get('source') or '本地知识库'}）\n{span}"
+            items.append({
             "kind": "knowledge", "article_id": int(article.get("id") or 0),
             "title": article.get("title") or "未命名文章",
             "source": article.get("source") or "",
-            "excerpt": body[:400],
+            "excerpt": span[:400],
             "block": block,
-        })
+            })
     notes = ['知识库回答上下文最多纳入 12 篇候选，不能据此认定已穷尽相关文章。'] if len(articles) >= MAX_KNOWLEDGE_ARTICLES else []
     return items, notes
 
@@ -207,7 +225,9 @@ async def file_evidence(question, model, file_scope, budget, get_db, parse_file,
     selected, partial = case_files._budgeted_file_chunks(
         question, rows, model, "", budget_share=budget)
     items = []
-    for index, row in enumerate(selected, 1):
+    for row in selected:
+      for span in _evidence_spans(row.get('chunk_text') or ''):
+        index = len(items) + 1
         items.append({
             "kind": "files", "file_index": index,
             "title": row.get("display_name") or row.get("relative_path") or "所选文件",
@@ -215,10 +235,10 @@ async def file_evidence(question, model, file_scope, budget, get_db, parse_file,
             "locator": row.get("locator") or "",
             "case_id": file_scope.get("case_id"),
             "session_id": file_scope.get("session_id") or "",
-            "excerpt": (row.get("chunk_text") or "")[:400], "vision":bool(row.get('vision')),
+            "excerpt": span[:400], "vision":bool(row.get('vision')),
             "block": (f"《{row.get('display_name') or '所选文件'}》"
                       f"来源：{row.get('relative_path') or ''} · {row.get('locator') or ''}\n"
-                      f"{row.get('chunk_text') or ''}"),
+                      f"{span}"),
         })
     if partial:
         warnings.append("所选文件原文较多，已按问题与文档结构分配篇幅；未提供的片段不代表原文件缺失。")
@@ -236,6 +256,7 @@ COMBINED_RULES = (
     "5. 严格区分三种内容：材料原文 / 材料中的观点 / 你的归纳。不得把归纳说成原文。\n"
     "6. 材料未覆盖的部分单列“未覆盖与待核实”，不得因为没有材料就断言不存在或没有相关规定。\n"
     "7. 全文只使用本消息材料前的【依据N】编号，不要使用 [FILE:…]、[REF:…] 或自造编号。\n"
+    "每个编号对应一个独立原文片段；每项陈述只引用实际支持该陈述的片段，不得用同一篇文章或文件的其他片段代替。\n"
     "8. 使用 Markdown：标题、列表各占一行，段落之间空行。不要输出表格以外的排版指令。"
 )
 
@@ -278,7 +299,7 @@ def citation_payload(item, index):
             "id": item["article_id"], "article_id": item["article_id"],
             "title": item["title"], "source": item.get("source") or "",
             "quote": item.get("excerpt") or "", "excerpt": item.get("excerpt") or "",
-            "source_type": "article", "citation_index": index,
+            "source_type": "article", "citation_index": index, "citation_span_version": 1,
         }
     if item["kind"] == "fada":
         return {
@@ -296,7 +317,7 @@ def citation_payload(item, index):
         "source": item.get("source") or "", "locator": item.get("locator") or "",
         "heading": item.get("locator") or "", "quote": item.get("excerpt") or "",
         "source_type": "local_file" if item.get("case_id") else "local_attachment",
-        "citation_index": index,
+        "citation_index": index, "citation_span_version": 1,
     }
     if item.get("case_id"):
         payload["case_id"] = int(item["case_id"])
@@ -431,6 +452,7 @@ async def answer_combined(question, model, sources, *, get_db, call_ai, parse_fi
             else "所选来源都没有取得可用材料，请调整问题或来源后重试")
     # Keep one result per available source when trimming the assembled prompt.
     messages = build_messages(question, items, skill_instruction)
+    omitted = 0
     while sum(_tokens(message["content"]) for message in messages) > budget:
         counts = {name: sum(item["kind"] == name for item in items) for name in wanted}
         removable = [index for index, item in enumerate(items) if counts[item["kind"]] > 1]
@@ -438,7 +460,10 @@ async def answer_combined(question, model, sources, *, get_db, call_ai, parse_fi
             raise HTTPException(status_code=413, detail="所选材料超出模型输入容量，请缩小材料范围后重试")
         longest = max(removable, key=lambda index: _tokens(items[index]["block"]))
         items.pop(longest)
+        omitted += 1
         messages = build_messages(question, items, skill_instruction)
+    if omitted:
+        warnings.append(f"因模型输入容量限制，{omitted} 条已召回材料未纳入回答；不能据此认定检索结果已穷尽。")
     breakdown = {name: sum(item["kind"] == name for item in items) for name in wanted}
     if progress:
         progress(f"已汇总 {len(items)} 条材料，正在统一归纳")
@@ -456,7 +481,7 @@ async def answer_combined(question, model, sources, *, get_db, call_ai, parse_fi
     payload = [citation_payload(item, index) for index, item in enumerate(cited, 1)]
     kinds = sorted({item["kind"] for item in cited})
     trace = [
-        f"本次同时使用{len(wanted)}个数据源：" + "、".join(SOURCE_LABELS[name] for name in wanted),
+        f"本次选择{len(wanted)}个数据源：" + "、".join(SOURCE_LABELS[name] for name in wanted),
         "材料条数：" + "、".join(f"{SOURCE_LABELS[name]} {breakdown.get(name, 0)} 条" for name in wanted),
     ]
     if len(kinds) > 1:

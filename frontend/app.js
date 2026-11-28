@@ -2227,6 +2227,7 @@ function scrollTabBodyToOffset(tabId, charOffset, keyword, searchTerm = '') {
   }
 
   const quoteMatch = findCitationQuoteNode(bodyEl, keyword);
+  if (!quoteMatch && charOffset === -1) { showToast('未能在当前文章中精确找到该依据片段，请手动核对原文。', 'warning'); return; }
   if (!quoteMatch && citationProvisionNumber(keyword) !== null) return;
   if (quoteMatch) targetNode = quoteMatch;
   if (!targetNode) return;
@@ -14704,10 +14705,92 @@ async function syncSearchScopeFromServer() {
 function applySearchScopePreference() {
   const scope = loadSearchScopePreference();
   state.searchScope = scope;
-  const scopeSelect = $('search-scope');
-  if (scopeSelect) scopeSelect.value = scope;
+  renderSearchScopeControl(scope);
   const settingSelect = $('settings-search-scope-select');
   if (settingSelect) settingSelect.value = scope;
+}
+
+function renderSearchScopeControl(scope) {
+  const trigger = $('search-scope');
+  const label = SEARCH_SCOPE_LABELS[scope];
+  if (!trigger || !label) return;
+  trigger.value = scope;
+  trigger.querySelector('span').textContent = label;
+  trigger.setAttribute('aria-label', `搜索范围，当前为${label}`);
+  $('search-scope-menu').querySelectorAll('[role="menuitemradio"]').forEach(option => {
+    option.setAttribute('aria-checked', String(option.value === scope));
+  });
+}
+
+function initSearchScopeMenu() {
+  const trigger = $('search-scope');
+  const menu = $('search-scope-menu');
+  const control = trigger.parentElement;
+  menu.innerHTML = Object.entries(SEARCH_SCOPE_LABELS).map(([scope, label]) => `
+    <button type="button" role="menuitemradio" tabindex="-1" value="${scope}" aria-checked="false">
+      <span>${label}</span>
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="m3 7 2.5 2.5L11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>`).join('');
+  const options = Array.from(menu.querySelectorAll('button'));
+
+  function close(restoreFocus = false) {
+    if (menu.hidden) return;
+    menu.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) trigger.focus({ preventScroll: true });
+  }
+
+  function open() {
+    hideSearchSuggestions();
+    renderSearchScopeControl(trigger.value);
+    menu.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    (options.find(option => option.value === trigger.value) || options[0]).focus({ preventScroll: true });
+  }
+
+  trigger.addEventListener('click', () => {
+    if (menu.hidden) open();
+    else close(true);
+  });
+  menu.addEventListener('click', event => {
+    const option = event.target.closest('button');
+    if (!option) return;
+    renderSearchScopeControl(option.value);
+    onSearchScopeChanged();
+    renderSearchScopeSetting();
+    close(true);
+  });
+  control.addEventListener('keydown', event => {
+    const { key } = event;
+    if (menu.hidden) {
+      if (key !== 'ArrowDown' && key !== 'ArrowUp') return;
+      event.preventDefault();
+      open();
+      return;
+    }
+    if (key === 'Tab') {
+      close(true);
+      return;
+    }
+    if (key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+      return;
+    }
+    const index = options.indexOf(document.activeElement);
+    const last = options.length - 1;
+    const next = { ArrowDown: (index + 1) % options.length, ArrowUp: index <= 0 ? last : index - 1, Home: 0, End: last }[key];
+    if (next === undefined) return;
+    event.preventDefault();
+    options[next].focus();
+  });
+  control.addEventListener('focusout', event => {
+    if (!control.contains(event.relatedTarget)) close();
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!control.contains(event.target)) close();
+  });
 }
 
 function renderSearchScopeSetting() {
@@ -14719,8 +14802,7 @@ function setSearchScopePreference(scope) {
   if (!SEARCH_SCOPE_OPTIONS.has(scope)) return;
   state.searchScope = scope;
   saveSearchScopePreference(scope);
-  const scopeSelect = $('search-scope');
-  if (scopeSelect) scopeSelect.value = scope;
+  renderSearchScopeControl(scope);
   showToast(`默认搜索范围：${SEARCH_SCOPE_LABELS[scope]}`);
   onSearchInput();
 }
@@ -15007,8 +15089,7 @@ function restoreSavedView(id) {
   if (searchInput) searchInput.value = state.q;
   const fuzzyToggle = $('fuzzy-toggle');
   if (fuzzyToggle) fuzzyToggle.checked = state.fuzzy;
-  const scopeSelect = $('search-scope');
-  if (scopeSelect) scopeSelect.value = state.searchScope;
+  renderSearchScopeControl(state.searchScope);
   if (window.refreshKnowledgeDirectory) { normalizeDirectoryFilterState(); refreshKnowledgeDirectory(); $('page-title').textContent = directoryFilterTitle(); }
   applyArticleDensity();
   renderSortModeToggle();
@@ -26284,6 +26365,7 @@ async function initApp() {
   // 恢复文章列表密度偏好
   state.articleDensity = loadArticleDensityPreference();
   // 恢复默认搜索范围偏好
+  initSearchScopeMenu();
   applySearchScopePreference();
   // 恢复每页文章数量偏好
   state.pageSize = loadArticlePageSizePreference();
@@ -28812,6 +28894,7 @@ function syncAskConversationView(showLoading = true) {
   askActiveRequestContext = task?.context || null;
   askActiveRequestHistoryKey = task ? key : '';
   askAbortController = task?.controller || null;
+  if (task) document.querySelector('#ask-case-hub-prompts details')?.removeAttribute('open');
   const send = document.getElementById('ask-send-btn');
   if (send) send.disabled = !!task;
   removeAskLoading();
@@ -30129,6 +30212,8 @@ function renderAskHistory() {
   syncAskConversationView(false);
 
   const history = loadAskHistory();
+  const presets = document.querySelector('#ask-case-hub-prompts details');
+  if (presets) presets.open = !history.length && !askIsLoading;
 
   const welcomeText = currentAskWelcomeText();
 
@@ -30456,14 +30541,7 @@ function openAskCitationSource(citation) {
   if (citation?.source_type === 'local_file') {
     const contextCaseId = Number(citation.case_id || askContext?.caseId || 0);
     if (!contextCaseId || !citation.source) return;
-    fetch(`/api/case-manager/cases/${contextCaseId}/local-files/open`, {
-      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({path:citation.source})
-    }).then(async response => {
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.detail || '无法打开本地文件');
-      }
-    }).catch(error => showToast(error.message || '无法打开本地文件', 'error'));
+    openAskCaseCitationPreview(contextCaseId, citation);
     return;
   }
   if (citation?.source_type === 'local_attachment') {
@@ -30482,6 +30560,9 @@ function openAskCitationSource(citation) {
   if (!articleId) return;
   const quote = citation?.quote || citation?.excerpt || '';
   const charStart = Number(citation?.char_start);
+  if (askContext?.type === 'combined' && !citation?.citation_span_version && quote.trim()) {
+    showToast('旧回答保存的是来源片段开头，未必对应当前观点；请核对全文或重新生成。', 'warning');
+  }
 
   // AI 回答依据属于主工作区导航：始终复用文章标签页，避免落入无导航栏的旧版详情页。
   state.pendingScrollOffset = null;
@@ -30491,7 +30572,8 @@ function openAskCitationSource(citation) {
     state.pendingScrollOffset = charStart;
     state.pendingCitationQuote = quote || null;
   } else if (quote.trim()) {
-    state.pendingHighlight = quote.trim();
+    state.pendingScrollOffset = -1;
+    state.pendingCitationQuote = quote.trim();
   }
 
   const askPanel = document.getElementById('ask-panel');
@@ -30510,6 +30592,51 @@ function openAskCitationSource(citation) {
     tab.type === TAB_TYPES.ARTICLE && Number(tab.data?.articleId) === articleId
   );
   if (articleTab) askCitationReturnByTabId.set(articleTab.id, returnState);
+}
+
+async function openAskCaseCitationPreview(caseId, citation) {
+  const previousFocus = document.activeElement;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'ask-case-source-preview';
+  dialog.innerHTML = '<header><h2></h2><button type="button" data-close>关闭</button></header><p data-quote></p><p data-note role="status">正在读取原文…</p><div data-body></div><button type="button" data-open>用默认应用打开原件</button>';
+  dialog.querySelector('h2').textContent = `${citation.source} · ${citation.locator || citation.heading || '位置待核对'}`;
+  dialog.querySelector('[data-quote]').textContent = citation.quote || citation.excerpt || '此依据没有保存原文片段。';
+  document.body.appendChild(dialog);
+  dialog.addEventListener('close', () => { dialog.remove(); previousFocus?.focus(); });
+  dialog.querySelector('[data-close]').onclick = () => dialog.close();
+  dialog.querySelector('[data-open]').onclick = async () => {
+    try {
+      const response = await fetch(`/api/case-manager/cases/${caseId}/local-files/open`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:citation.source})});
+      if (!response.ok) throw Error((await response.json()).detail || '无法打开原件');
+    } catch (error) { showToast(error.message || '无法打开原件', 'error'); }
+  };
+  dialog.showModal();
+  try {
+    const response = await fetch(`/api/case-manager/cases/${caseId}/local-files/citation-preview`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:citation.source})});
+    const data = await response.json();
+    if (!response.ok) throw Error(data.detail || '无法读取原文');
+    if (!dialog.isConnected) return;
+    const body = dialog.querySelector('[data-body]'), note = dialog.querySelector('[data-note]');
+    if (data.kind === 'docx') {
+      const compact = value => String(value || '').replace(/\s+/g, '');
+      const needle = compact(citation.quote || citation.excerpt).slice(0, 40);
+      let first = null;
+      for (const paragraph of data.paragraphs) {
+        const p = document.createElement('p'), label = document.createElement('small');
+        label.textContent = `第${paragraph.number}段`; p.append(label, document.createElement('br'), document.createTextNode(paragraph.text));
+        if (!first && needle.length >= 12 && compact(paragraph.text).includes(needle)) { p.className = 'match'; first = p; }
+        body.appendChild(p);
+      }
+      note.textContent = first ? (citation.citation_span_version ? '已在提取的 Word 段落中匹配到依据片段，请核对上下文。' : '已匹配旧回答保存的来源片段开头，但该位置未必对应当前观点，请核对上下文或重新生成。') : '未能精确匹配依据片段，请在原文中查找并核对；旧回答可能只保存了较长片段的开头。';
+      first?.scrollIntoView({block:'center'});
+    } else if (/\.(pdf|png|jpe?g)$/i.test(citation.source)) {
+      const page = String(citation.locator || citation.heading || '').match(/第\s*(\d+)\s*页/);
+      const frame = document.createElement('iframe'); frame.title = '案件材料原文';
+      frame.src = `/api/case-manager/cases/${caseId}/local-files/preview-content?path=${encodeURIComponent(citation.source)}` + (page ? `#page=${page[1]}` : '');
+      body.appendChild(frame);
+      note.textContent = page ? `已打开第 ${page[1]} 页，请在原页核对依据片段。` : '未取得原件页码，请在原件中核对依据片段。';
+    } else note.textContent = '此格式暂不支持段落预览，请使用默认应用打开原件核对。';
+  } catch (error) { if (dialog.isConnected) dialog.querySelector('[data-note]').textContent = error.message || '无法读取原文'; }
 }
 
 function restoreAskCitationReturn(returnState) {
@@ -30858,10 +30985,11 @@ function renderCaseHubQuestions() {
   if (!box) return;
   box.hidden = !askContext?.caseHub;
   if (box.hidden) return;
-  box.innerHTML = '<div class="ask-case-hub-label">本案研究 · 点击选择问题，发送前可修改</div>' +
+  const expanded = box.querySelector('details')?.open ?? !(loadAskHistory().length || askIsLoading);
+  box.innerHTML = `<details ${expanded ? 'open' : ''}><summary>本案研究 · 预置问题</summary><div class="ask-case-hub-options"><div class="ask-case-hub-label">点击选择问题，发送前可修改</div>` +
     CASE_HUB_QUESTIONS.map((q,i)=>`<button type="button" onclick="selectCaseHubQuestion(${i})">${escapeHtml(q)}</button>`).join('') +
     '<div class="ask-case-hub-side">案例检索立场：<button type="button" onclick="setCaseHubSide(\'原告\')">原告</button><button type="button" onclick="setCaseHubSide(\'被告\')">被告</button></div>' +
-    `<label class="ask-case-hub-side"><input type="checkbox" ${Number(askContext.files?.ocrConsentUntil || 0) > Date.now() ? 'checked' : ''} onchange="setCaseHubOcrConsent(this.checked)">允许本次扫描件发送至已配置的云端 OCR 服务</label>`;
+    `<label class="ask-case-hub-side"><input type="checkbox" ${Number(askContext.files?.ocrConsentUntil || 0) > Date.now() ? 'checked' : ''} onchange="setCaseHubOcrConsent(this.checked)">允许本次扫描件发送至已配置的云端 OCR 服务</label></div></details>`;
 }
 function setCaseHubOcrConsent(enabled) {
   if (!askContext?.caseHub || !askContext.files) return;
@@ -30879,7 +31007,7 @@ function selectCaseHubQuestion(index) {
   if (!askContext?.caseHub || !CASE_HUB_QUESTIONS[index]) return;
   const kinds = index === 0 ? ['knowledge','files'] : index === 1 ? ['fada','files'] :
     index === 3 || index === 4 ? ['knowledge','fada','files','publicweb'] : ['knowledge','fada','files'];
-  askContext = {...askContext, kinds, mcpSources:[], exportKnowledgePack:index === 5};
+  askContext = {...askContext, kinds, mcpSources:index === 4 ? (askContext.mcpSources || []) : [], exportKnowledgePack:index === 5};
   askSourceMode = kinds.includes('publicweb') ? 'public_web_cases' : 'local_only';
   syncAskContextToActiveTab();
   _updateAskContextBar(); updateAskSourceModeUI(); renderAskSelectedFiles(); renderAskHistory();
@@ -31239,6 +31367,7 @@ function ensureAskWordExportModal() {
           <div class="ask-word-layout-editor-actions"><button type="button" class="ask-word-layout-editor-cancel">取消</button><button type="submit">保存格式</button></div>
         </form>
       </section>
+      <fieldset class="ask-word-destination" hidden><legend>保存位置</legend><label><input type="radio" name="ask-word-destination" value="case"> <span data-case-label>绑定的案件文件夹</span></label><label><input type="radio" name="ask-word-destination" value="other"> 选择其他位置</label></fieldset>
       <div class="ask-word-export-footer">
         <span>输出格式：.docx · 所选页面尺寸 · 自动页码</span>
         <div><button type="button" class="ask-word-export-cancel">取消</button><button type="button" class="ask-word-export-confirm">生成 Word</button></div>
@@ -31317,10 +31446,11 @@ function ensureAskWordExportModal() {
   modal.querySelector('.ask-word-export-confirm').addEventListener('click', async () => {
     const state = askWordExportState;
     if (!state) return;
+    const destination = modal.querySelector('input[name="ask-word-destination"]:checked')?.value || 'other';
     closeAskWordExportModal();
     if (state.kind === 'research-single') await exportResearchQuestion(state.targetId, 'docx', state.buttonEl, state.layout);
     else if (state.kind === 'research-all') await exportAllResearchQuestions(state.targetId, 'docx', state.buttonEl, state.layout);
-    else await exportAskAnswer(state.messageId, 'docx', state.buttonEl, state.layout);
+    else await exportAskAnswer(state.messageId, 'docx', state.buttonEl, state.layout, null, destination);
   });
   document.body.appendChild(modal);
   return modal;
@@ -31329,6 +31459,14 @@ function ensureAskWordExportModal() {
 async function openAskWordExportModal(messageId, buttonEl) {
   const modal = ensureAskWordExportModal();
   askWordExportState = { kind: 'ask', messageId, buttonEl, layout: 'legal_standard' };
+  const record = loadAskHistory().find(item => item.id === messageId && item.role === 'ai');
+  const caseId = Number(record?.caseLink?.caseId || record?.askContext?.files?.caseId || record?.askContext?.caseId || record?.focus_case_id || record?.case_id || 0);
+  const destination = modal.querySelector('.ask-word-destination');
+  destination.hidden = false;
+  const caseOption = destination.querySelector('[value="case"]');
+  caseOption.disabled = !(caseId > 0);
+  destination.querySelector('[data-case-label]').textContent = caseId > 0 ? `绑定的案件文件夹 · ${record?.caseLink?.caseTitle || record?.askContext?.files?.caseTitle || '当前案件'}` : '绑定的案件文件夹（当前回答未关联案件）';
+  destination.querySelector(`[value="${caseId > 0 ? 'case' : 'other'}"]`).checked = true;
   try { await loadAskWordCustomLayouts(); } catch (error) { showToast(error.message, 'error'); }
   renderAskWordLayoutGrid(modal);
   modal.querySelector('.ask-word-layout-editor').hidden = true;
@@ -31340,6 +31478,7 @@ async function openAskWordExportModal(messageId, buttonEl) {
 async function openResearchWordExportModal(scope, targetId, buttonEl) {
   if (!targetId) { showToast('未找到可导出的问答记录', 'error'); return; }
   const modal = ensureAskWordExportModal();
+  modal.querySelector('.ask-word-destination').hidden = true;
   askWordExportState = { kind: scope === 'all' ? 'research-all' : 'research-single', targetId, buttonEl, layout: 'legal_standard' };
   try { await loadAskWordCustomLayouts(); } catch (error) { showToast(error.message, 'error'); }
   renderAskWordLayoutGrid(modal);
@@ -31411,7 +31550,7 @@ function renderAskArtifacts(container, record) {
   }
 }
 
-async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_standard', artifactIndex = null) {
+async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_standard', artifactIndex = null, destination = 'other') {
   const originalText = buttonEl?.textContent || '';
   if (buttonEl) {
     buttonEl.disabled = true;
@@ -31424,6 +31563,7 @@ async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_stan
     const history = loadAskHistory().slice();
     const record = history.find(item => item.id === messageId && item.role === 'ai');
     if (!record) throw new Error('当前页面中未找到对应的 AI 回答');
+    const caseId = Number(record.caseLink?.caseId || record.askContext?.files?.caseId || record.askContext?.caseId || record.focus_case_id || record.case_id || 0);
     if (record.askContext?.type === 'case_database' || askContext?.type === 'case_database') {
       record.content = cleanCaseAiContent(record.content);
     }
@@ -31432,17 +31572,23 @@ async function exportAskAnswer(messageId, format, buttonEl, layout = 'legal_stan
     const exportParams = new URLSearchParams({ format });
     if (Number.isInteger(artifactIndex)) exportParams.set('artifact_index', artifactIndex);
     if (format === 'docx') exportParams.set('layout', layout);
-    let response = await ApexDownloads.fetch(`/api/ai-ask/messages/${encodeURIComponent(messageId)}/export?${exportParams.toString()}`, {}, {case_id:Number(record.askContext?.caseId || record.caseLink?.caseId || record.focus_case_id || record.case_id || 0)});
+    let response = await ApexDownloads.fetch(`/api/ai-ask/messages/${encodeURIComponent(messageId)}/export?${exportParams.toString()}`, {}, {case_id:caseId});
     // 极少数情况下数据库连接刚恢复，立即重试一次即可读取刚保存的记录。
     if (response.status === 404) {
       await saveAskHistory(history);
-      response = await ApexDownloads.fetch(`/api/ai-ask/messages/${encodeURIComponent(messageId)}/export?${exportParams.toString()}`, {}, {case_id:Number(record.askContext?.caseId || record.caseLink?.caseId || record.focus_case_id || record.case_id || 0)});
+      response = await ApexDownloads.fetch(`/api/ai-ask/messages/${encodeURIComponent(messageId)}/export?${exportParams.toString()}`, {}, {case_id:caseId});
     }
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || `导出失败（${response.status}）`);
     }
     const blob = await readExportBlob(response, format);
+    if (format === 'docx' && destination === 'case') {
+      if (!caseId) throw new Error('当前回答未关联案件，请选择其他保存位置');
+      const saved = await ApexDownloads.saveBlobToCase(blob, caseId);
+      showToast(`已保存到案件文件夹：${saved.destination}`, 'success');
+      return;
+    }
     const disposition = response.headers.get('Content-Disposition') || '';
     const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
     const filename = utf8Match ? decodeURIComponent(utf8Match[1]) : `AI法律问答.${format}`;
@@ -32656,6 +32802,7 @@ async function sendAskQuestion() {
   }
 
   if (askContext?.caseHub && askContext.exportKnowledgePack) {
+    const exportContext = askContext;
     const caseId = Number(askContext.files?.caseId || 0);
     const button = document.getElementById('ask-send-btn');
     if (button?.disabled) return;
@@ -32677,6 +32824,11 @@ async function sendAskQuestion() {
       link.href = url; link.download = '案件知识包.zip'; document.body.appendChild(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       recordApexDownload(link.download, 'ai', '案件中台 · 知识包');
+      exportContext.exportKnowledgePack = false;
+      if (askContext === exportContext) {
+        syncAskContextToActiveTab();
+        if (input.value === originalInput) { input.value = ''; autoResizeAskInput(input); saveAskDraft(input); }
+      }
       showToast('知识包已生成，请查看压缩包内的检索说明', 'success');
     } catch (error) { showToast(error.message || '知识包生成失败', 'error'); }
     finally { if (button) button.disabled = false; }

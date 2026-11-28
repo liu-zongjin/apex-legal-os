@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=421', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=427', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -5968,8 +5968,7 @@ function buildCaseNameSuggestion(caseType) {
   const parts = [];
   if (clientNames.length) parts.push(clientNames.join('、'));
   if (opponentNames.length) parts.push(opponentNames.join('、'));
-  if (cause) parts.push(cause);
-  return parts.join('、');
+  return parts.join('、') + cause;
 }
 function onCaseTitleInput(input) {
   if (!state.editing) return;

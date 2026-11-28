@@ -190,17 +190,28 @@
   }
 
   const entries = [
-    { id: "home", label: "返回首页", icon: "#tab-bar-home-btn svg" },
-    { id: "all", label: "全部知识", source: '[data-view="all"]', home: true },
-    { id: "notes", label: "我的笔记", source: '[data-view="notes"]', home: true },
-    { id: "knowledge", label: "知识中心", source: ".nav-item-legal-knowledge" },
-    { id: "trash", label: "回收站", source: ".nav-item[onclick*='openArticleTrash']" },
-    { id: "domain", label: "专业领域", directory: true, icon: "M2 4h12v9H2zM5.5 4V2.5h5V4M2 7.5h12M7 7.5h2" },
-    { id: "customLib", label: "自定义库", directory: true, icon: "M2.5 4h4l1.4 1.6h5.6v7.5h-11zM8 7.6v3.4m-1.7-1.7h3.4" },
-    { id: "author", label: "作者", directory: true, icon: "M10.5 5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0ZM3 13.5a5 5 0 0 1 10 0" },
-    { id: "add", label: "添加知识", source: ".btn-add" },
-    { id: "stats", label: "可视化统计", source: ".btn-stats[onclick='openKbStatsTab()']" },
-    { id: "settings", label: "设置", source: "#sidebar-settings-btn" }
+    { id: "home", label: "返回首页",
+      icon: "M4 10.4 10.8 4.6a1.8 1.8 0 0 1 2.4 0l6.8 5.8v7.8a1.8 1.8 0 0 1-1.8 1.8H5.8A1.8 1.8 0 0 1 4 18.2z M9.4 20v-5.5a1 1 0 0 1 1-1h3.2a1 1 0 0 1 1 1V20" },
+    { id: "all", label: "全部知识", source: '[data-view="all"]', home: true,
+      icon: "M5.5 3.5h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2z M15.5 3.5h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2z M5.5 13.5h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2z M15.5 13.5h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-3a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2z" },
+    { id: "notes", label: "我的笔记", source: '[data-view="notes"]', home: true,
+      icon: "M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z M14 3v4a1 1 0 0 0 1 1h4 M8.5 12h7m-7 4h4.5" },
+    { id: "knowledge", label: "知识中心", source: ".nav-item-legal-knowledge",
+      icon: "M12 6.8C9.7 5.1 6.6 4.8 3.5 5.5v13.2c3.1-.7 6.2-.4 8.5 1.3 2.3-1.7 5.4-2 8.5-1.3V5.5c-3.1-.7-6.2-.4-8.5 1.3V20" },
+    { id: "trash", label: "回收站", source: ".nav-item[onclick*='openArticleTrash']",
+      icon: "M4.5 7h15 M9 7V5.3A1.3 1.3 0 0 1 10.3 4h3.4A1.3 1.3 0 0 1 15 5.3V7 M6.3 7l.9 11.2A2 2 0 0 0 9.2 20h5.6a2 2 0 0 0 2-1.8L17.7 7 M10.2 10.8l.3 5.5m3.3-5.5-.3 5.5" },
+    { id: "domain", label: "专业领域", directory: true,
+      icon: "M5 7h14a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z M8.5 7V5.5A1.5 1.5 0 0 1 10 4h4a1.5 1.5 0 0 1 1.5 1.5V7 M3 11.5c2.5 1.2 5.1 1.8 7 1.8m4 0c1.9 0 4.5-.6 7-1.8 M10 13.3h4" },
+    { id: "customLib", label: "自定义库", directory: true,
+      icon: "M3 6.5a2 2 0 0 1 2-2h4.3L12 7h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M12 10.5v5.5m-2.75-2.75h5.5" },
+    { id: "author", label: "作者", directory: true,
+      icon: "M16 7.5a4 4 0 1 1-8 0 4 4 0 0 1 8 0z M4.5 20.5v-1a7.5 6 0 0 1 15 0v1" },
+    { id: "add", label: "添加知识", source: ".btn-add",
+      icon: "M12 4.5v15m-7.5-7.5h15" },
+    { id: "stats", label: "可视化统计", source: ".btn-stats[onclick='openKbStatsTab()']",
+      icon: "M4 20v-6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v6z M10 20V9.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V20z M16 20V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v15z" },
+    { id: "settings", label: "设置", source: "#sidebar-settings-btn",
+      icon: "M9.7 3.2h4.6l.45 2.45 1.48.85 2.34-.83 2.3 4-1.9 1.6v1.46l1.9 1.6-2.3 4-2.34-.83-1.48.85-.45 2.45H9.7l-.45-2.45-1.48-.85-2.34.83-2.3-4 1.9-1.6v-1.46l-1.9-1.6 2.3-4 2.34.83 1.48-.85z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" }
   ];
 
   function focusHome(source) {
@@ -237,7 +248,6 @@
   actions.className = "work-sidebar-actions";
   const buttons = entries.map((entry) => {
     const source = entry.source && sidebar.querySelector(entry.source);
-    const icon = entry.id === "home" ? document.querySelector(entry.icon) : source?.querySelector("svg");
     const button = document.createElement("button");
     button.className = "work-sidebar-button";
     button.type = "button";
@@ -247,22 +257,20 @@
       button.setAttribute("aria-controls", nav.id);
       button.setAttribute("aria-expanded", "false");
     }
-    if (icon) {
-      button.append(icon.cloneNode(true));
-    } else {
-      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("viewBox", "0 0 16 16");
-      const path = document.createElementNS(svg.namespaceURI, "path");
-      path.setAttribute("d", entry.icon);
-      path.setAttribute("fill", "none");
-      path.setAttribute("stroke", "currentColor");
-      path.setAttribute("stroke-width", "1.4");
-      path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("stroke-linejoin", "round");
-      svg.append(path);
-      button.append(svg);
-    }
-    button.firstElementChild.setAttribute("aria-hidden", "true");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "20");
+    svg.setAttribute("height", "20");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.65");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(svg.namespaceURI, "path");
+    path.setAttribute("d", entry.icon);
+    svg.append(path);
+    button.append(svg);
     button.addEventListener("click", () => {
       const keyboard = button.matches(":focus-visible");
       tooltip.hide(true);

@@ -1874,6 +1874,27 @@ def register_case_file_routes(
             raise HTTPException(status_code=500, detail=completed.stderr.strip() or "无法在访达中定位该项目")
         return {"ok": True}
 
+    @app.post("/api/case-manager/cases/{case_id}/local-files/citation-preview")
+    async def preview_case_citation(case_id: int, request: Request):
+        require_action(request)
+        body = await request.json()
+        target = _resolve_inside(_bound_root(get_db, case_id), body.get('path'), allow_root=False)
+        if not target.is_file():
+            raise HTTPException(404, '案件文件不可用')
+        if target.suffix.lower() != '.docx':
+            return {'kind': 'file', 'name': target.name}
+        if target.stat().st_size > 100 * 1024 * 1024:
+            raise HTTPException(413, '文件过大，无法预览')
+        from docx import Document
+        def read_paragraphs():
+            return [{'number': index, 'text': paragraph.text} for index, paragraph in
+                    enumerate(Document(target).paragraphs, 1) if paragraph.text.strip()][:5000]
+        try:
+            paragraphs = await _run_in_thread(read_paragraphs)
+        except Exception as exc:
+            raise HTTPException(422, '无法读取 Word 原文，请打开原件核对') from exc
+        return {'kind': 'docx', 'name': target.name, 'paragraphs': paragraphs}
+
     @app.post("/api/case-manager/cases/{case_id}/local-files/preview")
     async def preview_local_file(case_id: int, request: Request):
         require_action(request)

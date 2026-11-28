@@ -48,16 +48,27 @@ partial coverage and does not claim verified conflict. Incremental jobs snapshot
 old and new inputs, copy the verified parsed source cache, retain reviewed and
 excluded events, extract only new materials and enforce the parent revision.
 Default mode is timeline except the existing explicit material-task entry.
-The timeline-auto response also provides role-to-side mappings derived from
-case party groups; roles shared by opposing groups stay unclassified. The
+The timeline-auto response provides role-to-side mappings and optional event
+subject defaults derived from case parties. Roles shared by opposing groups
+stay unclassified. A unique name is preferred for a known source role, with
+the role itself used when a name is unavailable or ambiguous. The review
+drawer offers a source subject only for blank fields. Saving accepts the
+server-validated default without changing the original extraction. Manual
+edits continue to use the normal revision and review-note checks. The
 chronology uses a continuous page axis, compact filter/export disclosures and
 a review drawer. Unknown sources are explicitly labelled, never inferred as
 the client's own side.
-The timeline adds a scroll-aware, keyboard-accessible date index and sticky
-source headings. `timeline-classify` validates case-scoped source paths and
+The timeline adds a scroll-aware, keyboard-accessible date index, centered
+within the visible workspace from the first screen. Source headings remain
+visible below the navigation during timeline scrolling. The case name in the navigation header opens the
+shared searchable case picker. `timeline-classify` validates case-scoped source paths and
 suggests parties from paths and bounded document text using the same local discovery logic; optional per-source
 party corrections apply only to new timeline inputs, survive task snapshots,
 and propagate to extracted events. Inherited sources cannot be rewritten.
+Linked Word text previews reuse the lossless extraction order for paragraphs
+and table rows. Highlight ranges map normalized layout and number formatting
+back to the original text. PDF highlights are drawn only in the preview, and
+visual-only transcriptions retain their page reference.
 
 The AI file picker accepts an entire bound case folder as a case-scoped root
 selection, excluding Stella's generated-output folder to prevent recursively
@@ -512,6 +523,12 @@ Article-library domain and custom-tag HTTP routes live in `domain_routes.py`
 and `tag_routes.py`. Domain review and the background classifier reuse the
 same rule proposal, and both routers use the existing SQLite adapter. The tag
 editor continues to save domain, author and custom-tag changes together.
+
+`research_routes.py` registers case research, project, question export and
+research memo APIs. JSON record edits and multipart resource edits use the
+same timeline save operation. `authority_watch_routes.py` connects legacy
+watch requests to the current radar runner and shares article import with
+the radar inbox. Both surfaces use the existing SQLite adapter.
 
 The standalone law-firm letter, power of attorney, and legal representative
 certificate pages and APIs are assembled by `document_generators.py`. The Word

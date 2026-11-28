@@ -19,8 +19,10 @@ import tempfile
 import time
 import uuid
 import zipfile
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
+from xml.etree.ElementTree import ParseError
 
 from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -40,16 +42,37 @@ STATEMENT_LABELS = {'fact':'事实','legal':'法律观点','request':'请求','o
 LABELS = {'supported': 'AI初核支持', 'contradicted': 'AI初核矛盾', 'not_found': '未找到出处', 'inference': '推断／待核'}
 
 
+TIMELINE_PARTY_ROLES = {
+    '被告': '被告方', '原告': '原告方', '被上诉人': '被上诉人', '上诉人': '上诉人',
+    '被申请人': '被申请人', '申请人': '申请人',
+}
+
+
+def timeline_party_label(role):
+    return next((label for key, label in TIMELINE_PARTY_ROLES.items() if key in role), '')
+
+
 def timeline_party_sides(parties):
     groups = {}
     for party in parties:
-        role = str(party.get('role') or '')
-        for key in ('被告', '原告', '被上诉人', '上诉人', '被申请人', '申请人'):
-            if key in role:
-                label = key + '方' if key in ('原告', '被告') else key
-                groups.setdefault(label, set()).add('client' if party.get('party_group') == 'client' else 'other')
-                break
+        label = timeline_party_label(str(party.get('role') or ''))
+        if label:
+            groups.setdefault(label, set()).add('client' if party.get('party_group') == 'client' else 'other')
     return {label:next(iter(values)) for label, values in groups.items() if len(values) == 1}
+
+
+def timeline_party_subjects(parties):
+    names = {label: set() for label in TIMELINE_PARTY_ROLES.values()}
+    for party in parties:
+        label = timeline_party_label(str(party.get('role') or ''))
+        if label:
+            names[label].add(str(party.get('name') or '').strip())
+    # A role is still known when several names are recorded for that party.
+    subjects = {}
+    for label, candidates in names.items():
+        name = next(iter(candidates)) if len(candidates) == 1 else ''
+        subjects[label] = name if name and len(name) <= 300 else label
+    return subjects
 
 
 def stamp():
@@ -432,6 +455,7 @@ class CaseWorkflowService:
             job['parent_revision'] = parent_timeline['revision']
             job['inherited_paths'] = [item['path'] for item in parent_timeline['sources']]
             job['timeline_events'] = json.loads(json.dumps(parent_timeline.get('timeline_events', []), ensure_ascii=False))
+            job['timeline_purged_ids'] = list(parent_timeline.get('timeline_purged_ids', []))
             job['timeline_conflicts'] = json.loads(json.dumps(parent_timeline.get('timeline_conflicts', []), ensure_ascii=False))
             job['timeline_rejections'] = int(parent_timeline.get('timeline_rejections', 0))
         if owner_task:
@@ -840,7 +864,8 @@ class CaseWorkflowService:
             rejected=0
             for proposal in rows:
                 row=grounded_event(proposal,batch)
-                if row:events.setdefault(row['id'],row)
+                if row:
+                    if row['id'] not in job.get('timeline_purged_ids', []): events.setdefault(row['id'],row)
                 else:rejected+=1
             if len(events)>MAX_EVENTS:raise HTTPException(413,'超过300项事件，请分组整理，不会静默截断')
             job['timeline_events']=ordered(list(events.values()))
@@ -1207,10 +1232,11 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
     @app.get('/api/case-workflows/cases/{case_id}')
     def case_info(case_id: int):
         with get_db() as conn:
-            row = conn.execute('SELECT id,title FROM case_manager_cases WHERE id=?', (case_id,)).fetchone()
+            row = conn.execute('SELECT * FROM case_manager_cases WHERE id=?', (case_id,)).fetchone()
         if row is None:
             raise HTTPException(404, '案件不存在')
-        return dict(row)
+        return {'id':row['id'], 'title':row['title'],
+                'case_type':row['case_type'] if 'case_type' in row.keys() else ''}
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks')
     def tasks(case_id: int):
@@ -1301,27 +1327,34 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
             service.launch(root, job)
         # A procedural role is not inherently the client's side. Only assign a
         # side when every recorded party with that role has the same group.
-        sides = timeline_party_sides(service.parties(case_id))
+        parties = service.parties(case_id)
+        sides = timeline_party_sides(parties)
         def word_locations():
-            from docx import Document
-            locations, cache = {}, {}
-            for event in (job or {}).get('timeline_events', []):
-                for ref in event.get('evidence', []):
-                    path = ref.get('path', '')
-                    if not path.lower().endswith('.docx') or not ref.get('quote'): continue
-                    try:
-                        if path not in cache:
-                            item = next(row for row in job['sources'] if row['path'] == path)
-                            service.source(root, path, item['sha256'])
-                            cache[path] = [p.text for p in Document(service.input_path(root,job,item)).paragraphs]
-                        quote = re.sub(r'\s+', '', ref['quote'])
-                        matches = [i for i,text in enumerate(cache[path],1) if quote and quote in re.sub(r'\s+', '', text)]
-                        if len(matches) == 1: locations[event['id']] = f'Word 第{matches[0]}段'
-                    except (OSError, ValueError, KeyError, StopIteration, HTTPException, zipfile.BadZipFile):
-                        continue
+            from .case_source_preview import WordPreview
+
+            locations = {}
+            sources = {item['path']: item for item in job['sources']}
+            citations = defaultdict(list)
+            for event in job.get('timeline_events', []):
+                ref = next(iter(event.get('evidence', [])), {})
+                path = ref.get('path', '')
+                if path.lower().endswith('.docx') and ref.get('quote') and ref.get('source_kind') != 'external_file':
+                    citations[(path, ref.get('sha256'))].append((event['id'], ref))
+            for (path, _), refs in citations.items():
+                ref = refs[0][1]
+                try:
+                    original = verified_preview_source(root, job, ref if ref.get('source_kind') else sources.get(path, ref))
+                    preview = WordPreview(original)
+                except (OSError, ValueError, KeyError, HTTPException, zipfile.BadZipFile, ParseError):
+                    continue
+                for event_id, ref in refs:
+                    location = preview.locator(preview.index.find(ref['quote']))
+                    if location:
+                        locations[event_id] = location
             return locations
         locations = await _run_in_thread(word_locations) if job and job.get('status') == 'completed' else {}
-        return {'job':public_job(job), 'scan':scan, 'created':created, 'party_sides':sides, 'word_locations':locations}
+        return {'job':public_job(job), 'scan':scan, 'created':created, 'party_sides':sides,
+                'party_subjects':timeline_party_subjects(parties), 'word_locations':locations}
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}')
     def detail(case_id: int, job_id: str):
@@ -1493,7 +1526,7 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                 from .timeline_presentation import options
                 try:job['export_options']=options(body.get('export_options',job.get('export_options')))
                 except ValueError as error:raise HTTPException(422,str(error))
-                job['timeline_events']=review_events(job['timeline_events'],body.get('events'))
+                job['timeline_events']=review_events(job['timeline_events'],body.get('events'),timeline_party_subjects(service.parties(case_id)))
                 manual=body.get('manual_events',[])
                 if not isinstance(manual,list) or len(manual)+len(job['timeline_events'])>MAX_EVENTS:raise HTTPException(422,'事件最多300项')
                 cache=service.directory(root,job_id)/'parsed-sources.json'
@@ -1536,6 +1569,51 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                     shutil.rmtree(folder,ignore_errors=True);raise
                 return job
         return public_job(await _run_in_thread(save_review))
+
+    @app.post('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-purge')
+    async def purge_timeline_events(case_id: int, job_id: str, request: Request):
+        require_action(request)
+        body = await request.json()
+        ids = body.get('event_ids') if isinstance(body, dict) else None
+        if (not isinstance(body, dict) or not isinstance(body.get('revision'), int)
+                or isinstance(body.get('revision'), bool) or not isinstance(ids, list)
+                or not ids or len(ids) > 300 or any(not isinstance(item, str) or not item or len(item) > 128 for item in ids)
+                or len(set(ids)) != len(ids)):
+            raise HTTPException(422, '请选择要彻底删除的事件')
+        def purge():
+            from .case_timeline import artifacts
+            with service.lock:
+                root, job = service.load(case_id, job_id)
+                if job.get('kind') != 'timeline' or job.get('status') != 'completed' or job['revision'] != body['revision']:
+                    raise HTTPException(409, '时间轴已变化，请重新载入后再删除')
+                selected = set(ids)
+                rows = [row for row in job['timeline_events'] if row['id'] in selected]
+                if len(rows) != len(selected):
+                    raise HTTPException(404, '部分事件不存在，请重新载入')
+                if any(row.get('review_status') != 'excluded' for row in rows):
+                    raise HTTPException(409, '请先将事件移至已删除，再彻底删除')
+                job['timeline_events'] = [row for row in job['timeline_events'] if row['id'] not in selected]
+                job['timeline_purged_ids'] = list(dict.fromkeys(job.get('timeline_purged_ids', []) + ids))
+                job['timeline_conflicts'] = [
+                    {**issue, 'event_ids': [item for item in issue.get('event_ids', []) if item not in selected]}
+                    for issue in job.get('timeline_conflicts', [])
+                    if len([item for item in issue.get('event_ids', []) if item not in selected]) >= 2
+                ]
+                job['revision'] += 1
+                folder = service.directory(root, job_id) / ('v' + str(job['revision']) + '-' + uuid.uuid4().hex[:8])
+                folder.mkdir()
+                try:
+                    if job['claims']: service.fact_artifacts(job, folder)
+                    artifacts(job, folder)
+                    if service.root(case_id) != root: raise HTTPException(409, '案件文件夹绑定已变化')
+                    job['artifacts'] = [{'name': path.name, 'path': str(path.relative_to(service.directory(root, job_id))), 'sha256': digest(path)} for path in sorted(folder.iterdir())]
+                    job['versions'].append({'revision': job['revision'], 'artifacts': job['artifacts'], 'at': stamp()})
+                    service.save(root, job)
+                except Exception:
+                    shutil.rmtree(folder, ignore_errors=True)
+                    raise
+                return public_job(job)
+        return await _run_in_thread(purge)
 
     @app.post('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-export-pdf')
     async def export_timeline_pdf(case_id: int, job_id: str, request: Request):
@@ -1684,8 +1762,20 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                 return job
         return await _run_in_thread(save_draft)
 
-    def material_pdf(case_id,job_id,path,event_id='',request=None):
-        import fitz
+    def verified_preview_source(root, job, item, request=None):
+        if item.get('source_kind') == 'external_file':
+            from .matter_local_links import local
+            if request is None:
+                raise HTTPException(403, '请在本机打开文件')
+            local(request)
+        if item.get('source_kind'):
+            return service.reference_source(root, item)
+        original = service.input_path(root, job, item)
+        if item.get('snapshot'):
+            service.source(root, item['path'], item['sha256'])
+        return original
+
+    def preview_material(case_id,job_id,path,event_id='',request=None):
         root,job=service.load(case_id,job_id)
         event=next((row for row in job.get('timeline_events',[]) if row.get('id')==event_id),None) if event_id else None
         event_ref=next((ref for ref in (event or {}).get('evidence',[]) if ref.get('path')==path),None) if event else None
@@ -1695,12 +1785,11 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
             item=next((ref for row in job.get('timeline_events',[]) if row.get('manual_unverified') for ref in row.get('evidence',[]) if ref.get('path')==path),None)
         if not item:
             raise HTTPException(404,'材料不属于本次任务')
-        if item.get('source_kind') == 'external_file':
-            from .matter_local_links import local
-            if request is None: raise HTTPException(403, '请在本机打开文件')
-            local(request)
-        original=service.reference_source(root,item) if item.get('source_kind') else service.input_path(root,job,item)
-        if not item.get('source_kind'): service.source(root,item['path'],item['sha256'])
+        return root, item, verified_preview_source(root,job,item,request), event_ref or {}
+
+    def material_pdf(root,job_id,item,original):
+        import fitz
+
         if original.suffix.lower()=='.pdf':
             result=original
         else:
@@ -1743,66 +1832,80 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-info')
     def material_info(case_id: int,job_id: str,path: str):
-        _,count=material_pdf(case_id,job_id,path)
+        root,item,original,_=preview_material(case_id,job_id,path)
+        _,count=material_pdf(root,job_id,item,original)
         return {'path':path,'pages':count,'page_basis':'Word转换后PDF页码' if Path(path).suffix.lower() in {'.doc','.docx'} else '原件物理页码'}
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-preview')
     def material_preview(case_id: int,job_id: str,path: str,request: Request,page: int = 1, event_id: str = ''):
+        from html import escape
         from urllib.parse import quote
+        from .case_source_preview import WordPreview
+
+        root,item,original,ref = preview_material(case_id,job_id,path,event_id,request)
+        template = (frontend_dir / 'case-workflow-preview.html').read_text(encoding='utf-8')
+        is_word = original.suffix.lower() == '.docx'
+        cited = ref.get('quote', '')
+        preview = None
+        hits = []
+
+        def read_word():
+            try:
+                return WordPreview(original)
+            except (OSError, ValueError, KeyError, zipfile.BadZipFile, ParseError) as error:
+                raise HTTPException(422, '无法读取 Word 原文') from error
+
+        def word_response():
+            word = preview if preview is not None else read_word()
+            location = word.locator(hits)
+            summary = location or ('Word 正文预览 · 未定位到引句' if cited else 'Word 正文预览')
+            page_html = template.replace('__PAGE_CONFIG__', 'null').replace('__TEXT_SUMMARY__', escape(summary))
+            page_html = page_html.replace('__TEXT_LOCATION__', escape(location))
+            return HTMLResponse(page_html.replace('__TEXT_SECTIONS__', word.html(hits)), headers={'Cache-Control':'no-store'})
+
+        if is_word and ref:
+            verified_page = re.fullmatch(r'转换后PDF 第\s*\d+\s*页', ref.get('locator', ''))
+            try:
+                preview = read_word()
+            except HTTPException:
+                if not verified_page:
+                    raise
+            if preview is not None:
+                hits = preview.index.find(cited)
+            if hits or not verified_page:
+                return word_response()
         try:
-            # A paragraph-anchored Word citation must open at that paragraph,
-            # not at an arbitrary first page of a converted copy.
-            if event_id and Path(path).suffix.lower() == '.docx':
-                raise RuntimeError('使用 Word 段落定位')
-            _,count=material_pdf(case_id,job_id,path,event_id,request)
+            _,count=material_pdf(root,job_id,item,original)
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
-            if Path(path).suffix.lower() != '.docx':
-                raise HTTPException(422, str(error))
-            from docx import Document
-            from html import escape
-            root,job=service.load(case_id,job_id)
-            event=next((row for row in job.get('timeline_events',[]) if row.get('id')==event_id),None)
-            event_ref=next((ref for ref in (event or {}).get('evidence',[]) if ref.get('path')==path),None) if event else None
-            item=event_ref if event_ref and event_ref.get('source_kind') else next((item for item in job['sources'] if item['path']==path),None)
-            if not item: item=event_ref
-            if not item:
-                item=next((ref for row in job.get('timeline_events',[]) if row.get('manual_unverified') for ref in row.get('evidence',[]) if ref.get('path')==path),None)
-            if not item: raise HTTPException(404,'材料不属于本次任务')
-            if item.get('source_kind') == 'external_file':
-                from .matter_local_links import local
-                local(request)
-            original=service.reference_source(root,item) if item.get('source_kind') else service.input_path(root,job,item)
-            if not item.get('source_kind'): service.source(root,item['path'],item['sha256'])
-            ref=event['evidence'][0] if event and event.get('evidence') and event['evidence'][0]['path']==path else {}
-            cited=str(ref.get('quote') or '')
-            paragraphs=[p.text for p in Document(original).paragraphs]
-            rows=[]
-            for index,text in enumerate(paragraphs,1):
-                if not text.strip(): continue
-                normalized=re.sub(r'\s+', '',text)
-                needle=re.sub(r'\s+', '',cited)
-                found=bool(needle and (needle in normalized or normalized in needle and len(normalized)>=8))
-                rows.append(f'<p id="{index}"'+(' class="match"' if found else '')+f'><small>第{index}段</small><br>{escape(text)}</p>')
-            body=''.join(rows)
-            return HTMLResponse('<!doctype html><meta charset="utf-8"><style>body{max-width:760px;margin:30px auto;padding:0 24px;font:16px/1.8 sans-serif}small{color:#667}p{white-space:pre-wrap}.match{background:#fff1bc}</style>'+body+'<script>document.querySelector(".match")?.scrollIntoView({block:"center"})</script>',headers={'Cache-Control':'no-store'})
+            if is_word:
+                return word_response()
+            raise HTTPException(422, str(error))
         if not 1 <= page <= count:
             raise HTTPException(422,'预览页码超出范围')
         url=f'/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-page?path={quote(path,safe="")}&event_id={quote(event_id,safe="")}'
-        html=(frontend_dir/'case-workflow-preview.html').read_text(encoding='utf-8')
-        return HTMLResponse(html.replace('__PAGE_CONFIG__',json.dumps({'url':url,'count':count,'page':page})),headers={'Cache-Control':'no-store'})
+        page_html = template.replace('__TEXT_SUMMARY__', '').replace('__TEXT_LOCATION__', '').replace('__TEXT_SECTIONS__', '')
+        config = {'url':url,'count':count,'page':page,'citation':bool(cited and not ref.get('vision'))}
+        return HTMLResponse(page_html.replace('__PAGE_CONFIG__',json.dumps(config)),headers={'Cache-Control':'no-store'})
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-page')
     def material_page(case_id: int,job_id: str,path: str,request: Request,page: int = 1,event_id: str = ''):
         import fitz
-        from fastapi.responses import Response
-        pdf,count=material_pdf(case_id,job_id,path,event_id,request)
+        from .case_source_preview import highlight_pdf_citation
+
+        root,item,original,ref=preview_material(case_id,job_id,path,event_id,request)
+        pdf,count=material_pdf(root,job_id,item,original)
         if not 1 <= page <= count:
             raise HTTPException(422,'预览页码超出范围')
+        headers = {'Cache-Control':'no-store'}
         with fitz.open(pdf) as document:
             source=document[page-1]
+            if ref.get('quote') and not ref.get('vision'):
+                focus = highlight_pdf_citation(source, ref['quote'])
+                if focus is not None:
+                    headers['X-Stella-Citation-Y'] = f'{focus:.5f}'
             scale=min(1.6,1600/max(source.rect.width,source.rect.height))
             pixels=source.get_pixmap(matrix=fitz.Matrix(scale,scale),alpha=False,annots=True)
-            return Response(pixels.tobytes('png'),media_type='image/png',headers={'Cache-Control':'no-store'})
+            return Response(pixels.tobytes('png'),media_type='image/png',headers=headers)
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/artifacts/{artifact_index}')
     def download(case_id: int, job_id: str, artifact_index: int, revision: int = 0):

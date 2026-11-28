@@ -128,6 +128,7 @@ def recovery_scenarios(page, base):
     page.route(detail_url(second) + '/pause', control_hold)
     page.locator('[data-agent-action="pause"]').click()
     page.wait_for_function('document.querySelector("[data-agent-action=pause]").disabled')
+    page.locator('#caseTitleSwitch').click()
     page.locator('#caseSearch').fill('另案演示')
     page.locator('#caseResults [role="option"]').filter(has_text='另案演示').click()
     assert controls
@@ -138,6 +139,7 @@ def recovery_scenarios(page, base):
     assert page.locator('#caseSearch').input_value() == '另案演示（匿名）'
     page.unroute(detail_url(second) + '/pause', control_hold)
     page.unroute(detail_url(second), polling)
+    page.locator('#caseTitleSwitch').click()
     page.locator('#caseSearch').fill('匿名合同')
     page.locator('#caseResults [role="option"]').filter(has_text='匿名合同纠纷').click()
     goal(second['goal'])
@@ -158,6 +160,7 @@ def recovery_scenarios(page, base):
     resume_responses.pop().fulfill(json=originals[first['id']])
     page.wait_for_timeout(100)
     assert not page.locator('body').evaluate('el=>el.classList.contains("reviewing-result")')
+    page.locator('#chooseTimelineEvidence').click()
     assert page.locator('#inputStage').is_visible()
     assert page.locator('#inputStage').get_attribute('open') is not None
     page.unroute(detail_url(first), show_paused)
@@ -204,7 +207,7 @@ def run(output, engine="chromium"):
                 assert page.locator('#inputStage').is_visible()
                 assert not page.locator('#agentPanel').is_visible()
                 assert page.locator('#sourceSection #draftOptions').count() == 1
-                assert page.locator('.case-bar .segmented button').evaluate_all('(items)=>items.map(item=>item.id)') == ['agentMode','timelineMode','knowledgeMode','factMode','bookMode']
+                assert page.locator('.case-bar .segmented button').evaluate_all('(items)=>items.map(item=>item.id)') == ['timelineMode','agentMode','knowledgeMode','factMode','bookMode']
                 assert page.locator('.analysis-empty').is_visible()
                 assert page.locator('#sourceCount').inner_text() == '0 份文件'
                 for dark in (False, True):

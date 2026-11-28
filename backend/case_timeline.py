@@ -98,7 +98,7 @@ def issues(events):
     return result
 
 
-def review_events(events,updates):
+def review_events(events,updates,party_subjects=None):
     from .case_workflows import plain
     if not isinstance(updates,list) or len(updates)!=len(events):raise HTTPException(422,'请保存全部事件，不纳入的事件请标记排除')
     by_id={row.get('id'):row for row in updates if isinstance(row,dict) and isinstance(row.get('id'),str)}
@@ -112,10 +112,30 @@ def review_events(events,updates):
         date_text=plain(update.get('date_text',original['date_text']),100)
         actors=plain(update.get('actors',original['actors']),300)
         note=plain(update.get('note',''),2000)
-        changed=any(value!=original['original'][key] for key,value in [('description',description),('date_text',date_text),('actors',actors)])
+        extracted = original['original']
+        source_actor = original.get('actors_default') or ''
+        if update.get('use_source_actor') is True:
+            ref = next(iter(original.get('evidence', ())), {})
+            candidate = (party_subjects or {}).get(ref.get('party') or original.get('party'))
+            if (not candidate or actors != candidate or original.get('actors') or extracted.get('actors')
+                    or original.get('actors_edited') or source_actor or not ref or ref.get('source_kind') == 'case_folder'):
+                raise HTTPException(409, '文书来源方或事件主体已变化，请重新载入复核')
+            source_actor = candidate
+        changed = (description != extracted['description'] or date_text != extracted['date_text']
+                   or actors != (source_actor or extracted['actors']))
         if not description or ((changed or status in {'amended','excluded'}) and not note):raise HTTPException(422,'修改或排除事件时请填写复核意见')
         if changed and status not in {'amended','excluded'}:raise HTTPException(422,'修改了事件内容，请标记人工修改并填写意见')
         row={**original,**date_bounds(date_text),'date_text':date_text,'description':description,'actors':actors,'review_status':status,'review_note':note}
+        if source_actor:
+            row['actors_default'] = source_actor
+        if update.get('actors_edited') is True:
+            row['actors_edited'] = True
+        if status == 'excluded' and original['review_status'] != 'excluded':
+            row['before_delete_status'] = original['review_status']
+            row['before_delete_note'] = original.get('review_note', '')
+        elif status != 'excluded' and original['review_status'] == 'excluded':
+            row.pop('before_delete_status', None)
+            row.pop('before_delete_note', None)
         if date_text and not row.get('manual_unverified') and not any(date_text in ref['quote'] for ref in row['evidence']):row['date_warning']='人工日期与原始引句不同，请结合复核意见核对。'
         output.append(row)
     return ordered(output)
@@ -123,33 +143,28 @@ def review_events(events,updates):
 
 def artifacts(job,folder):
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment
     from .case_timeline_document import write_document
-    from .timeline_presentation import presentation,svg,pdf,confirmed_position
+    from .timeline_presentation import DATE_NOTE, TITLE, presentation, svg, pdf, confirmed_position
     events=ordered(job['timeline_events']);active={row['id'] for row in events if row['review_status']!='excluded' and row.get('evidence') and numeric_claims_supported(row.get('description',''),row['evidence'][0].get('quote',''))}
     conflicts=[{**item,'event_ids':[event_id for event_id in item.get('event_ids',[]) if event_id in active]}
                for item in job.get('timeline_conflicts',[])]
     job['timeline_issues']=issues(events)+[item for item in conflicts if len(item['event_ids']) >= 2]
     rows,refs,settings=presentation(events,job.get('export_options'));job['export_options']=settings
     wb=Workbook();ws=wb.active;ws.title='事实经过';ws.append(['序号','日期','主体','事实经过']+(['尾注'] if settings['include_evidence'] else []))
-    lines=['# 案件事实时间轴','','日期保留原记录精度，事件间距不表示时长。','']
+    lines=[f'# {TITLE}', f'共 {len(rows)} 项事件。{DATE_NOTE}']
     for index,row in enumerate(rows,1):
         markers='、'.join(str(n) for n in row['note_numbers'])
         ws.append([index,row['date_text'] or '日期不明',row['actors'],row['description']]+([markers] if settings['include_evidence'] else []))
-        lines += [f'## {index}. {row["date_text"] or "日期不明"}',row['description']+''.join(f'[^{n}]' for n in row['note_numbers'])]
-        if row['actors']:lines.append('主体：'+row['actors'])
+        lines.append(f'## {index}. {row["date_text"] or "日期不明"}')
+        if row['actors']:lines.append('**主体**  '+row['actors'])
+        lines.append(row['description']+''.join(f'[^{n}]' for n in row['note_numbers']))
+    _style_timeline_sheet(ws, [9, 24, 24, 92] + ([12] if settings['include_evidence'] else []), {1, 2, 5})
     if refs:
         notes=wb.create_sheet('原文依据');notes.append(['尾注编号','来源文件','已核实位置','原文引句'])
         for number,ref in enumerate(refs,1):
             notes.append([number,ref['path'],confirmed_position(ref),ref['quote']])
             lines.append(f'[^{number}]: '+ref['path']+(' · '+confirmed_position(ref) if confirmed_position(ref) else '')+'\n    '+ref['quote'].replace('\n','\n    '))
-    for sheet in wb:
-        sheet.freeze_panes='A2';sheet.auto_filter.ref=sheet.dimensions
-        for column in sheet.columns:
-            sheet.column_dimensions[column[0].column_letter].width=42 if column[0].column>1 else 10
-            for cell in column:
-                if isinstance(cell.value,str):cell.data_type='s'
-                cell.alignment=Alignment(wrap_text=True,vertical='top')
+        _style_timeline_sheet(notes, [12, 44, 24, 92], {1})
     wb.save(folder/'事实经过表.xlsx')
     write_document(events,folder/'事实经过表.docx',REVIEW,settings)
     (folder/'事实经过.md').write_text('\n\n'.join(lines),encoding='utf-8')
@@ -158,3 +173,56 @@ def artifacts(job,folder):
     (folder/'时间轴核验底稿.json').write_text(json.dumps({key:audit.get(key) for key in ('case_id','revision','sources','timeline_events','timeline_issues','timeline_coverage','claims','results','export_options')},ensure_ascii=False,indent=2),encoding='utf-8')
     (folder/'事实时间轴.svg').write_text(svg(events,settings),encoding='utf-8')
     pdf(events,settings,folder/'事实时间轴.pdf')
+
+
+def _style_timeline_sheet(sheet, widths, centered_columns):
+    from math import ceil
+    from unicodedata import east_asian_width
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+    from .timeline_presentation import ACCENT, INK, MUTED, PAPER, RULE, WHITE
+
+    sheet.freeze_panes = 'A2'
+    sheet.auto_filter.ref = sheet.dimensions
+    sheet.sheet_view.showGridLines = False
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+    sheet.page_setup.orientation = 'landscape'
+    sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
+    sheet.page_setup.fitToWidth = 1
+    sheet.page_setup.fitToHeight = 0
+    sheet.print_title_rows = '1:1'
+    sheet.oddFooter.right.text = '第 &P 页'
+    sheet.row_dimensions[1].height = 27
+    for index, width in enumerate(widths, 1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    edge = Border(bottom=Side(style='hair', color=RULE))
+    header_font = Font(name='Calibri', size=11, bold=True, color=WHITE)
+    cell_font = Font(name='Calibri', size=11, color=INK)
+    meta_font = Font(name='Calibri', size=10, color=MUTED)
+    header_fill = PatternFill('solid', fgColor=ACCENT)
+    alternate_fill = PatternFill('solid', fgColor=PAPER)
+    for index, cells in enumerate(sheet.iter_rows(), 1):
+        max_lines = 1
+        for cell, width in zip(cells, widths):
+            centered = cell.column in centered_columns
+            if index == 1:
+                cell.font = header_font
+                cell.fill = header_fill
+                continue
+            cell.font = meta_font if centered else cell_font
+            cell.border = edge
+            if index % 2 == 1:
+                cell.fill = alternate_fill
+            if isinstance(cell.value, str):
+                cell.data_type = 's'
+                chars_per_line = max(1, int(width * .93) - (1 if centered else 3))
+                lines = sum(max(1, ceil(sum(2 if east_asian_width(char) in 'WF' else 1 for char in line)
+                                        / chars_per_line)) for line in cell.value.split('\n'))
+                max_lines = max(max_lines, lines)
+        vertical = 'center' if max_lines <= 2 else 'top'
+        for cell in cells:
+            centered = cell.column in centered_columns
+            cell.alignment = Alignment(wrap_text=True, vertical=vertical, horizontal='center' if centered else 'left',
+                                       indent=0 if centered else 1)
+        if index > 1:
+            sheet.row_dimensions[index].height = min(409, max(27, max_lines * 15 + 9))
