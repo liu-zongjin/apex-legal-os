@@ -72,8 +72,10 @@ jobs:
               if ($duplicate.ExitCode -eq 0) { throw 'Concurrent session was accepted' }
               $reopen = Start-Process -FilePath $shortcut.target -ArgumentList $shortcut.arguments -WorkingDirectory $shortcut.root -Wait -PassThru
               if ($reopen.ExitCode -ne 0) { throw 'Second shortcut activation did not reopen the running workspace' }
-              $stopLink = Join-Path $desktop '退出 Stella.lnk'
-              $stop = & .venv/Scripts/python.exe scripts/windows/source_browser_shortcut.py read $stopLink --stop | ConvertFrom-Json
+              $stopLink = Join-Path $desktop (([string][char]0x9000) + ([char]0x51FA) + ' Stella.lnk')
+              $stopJson = & .venv/Scripts/python.exe scripts/windows/source_browser_shortcut.py read $stopLink --stop
+              if ($LASTEXITCODE -ne 0) { throw 'Could not read stop shortcut' }
+              $stop = $stopJson | ConvertFrom-Json
               Start-Process -FilePath $stop.target -ArgumentList $stop.arguments -WorkingDirectory $stop.root -Wait
               if (-not $process.WaitForExit(30000)) { throw 'Stop shortcut did not shut down Stella' }
               if ($process.ExitCode -ne 0) { throw 'Stella did not shut down cleanly' }
