@@ -255,3 +255,8 @@ summary:focus-visible{outline:2px solid var(--apex-accent);outline-offset:3px}
 .case-actions:has(.timeline-tools[open]) .case-action-menu:not([hidden]){display:grid}
 
 .timeline-comparison{margin-top:10px;padding:11px 14px;border:1px solid color-mix(in srgb,var(--apex-accent) 28%,var(--apex-border-subtle));border-radius:var(--apex-radius-md);background:var(--apex-surface-solid);font-size:12px;line-height:1.6}.timeline-comparison>summary{cursor:pointer;color:var(--apex-accent);font-weight:650}.timeline-comparison-group>p,.timeline-comparison-note{color:var(--apex-text-secondary);margin:10px 0}.timeline-comparison-peer{display:grid;gap:5px;padding:10px 12px;margin-top:8px;border-radius:var(--apex-radius-md);background:var(--apex-surface-muted);overflow-wrap:anywhere}.timeline-comparison-peer small{color:var(--apex-text-secondary)}.timeline-comparison-peer .button{justify-self:start}.timeline-comparison-note{margin-bottom:0}
+
+/* Keep the sticky timeline headings joined to the bottom of the case navigation. */
+.timeline-mode .timeline-legend,.timeline-mode .timeline-rail{top:calc(var(--workflow-context-offset, 100px) - 17px)}
+.timeline-animate .timeline-pair{animation-duration:.65s;animation-delay:calc(var(--entry-index,0) * 100ms)}
+@media(max-width:600px){.timeline-mode .timeline-rail{top:auto}}

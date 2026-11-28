@@ -31,7 +31,12 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    page.set_viewport_size({'width':1440,'height':500})
    page.locator('.timeline-mini [data-mini-target]').last.click()
    page.wait_for_function("document.querySelector('.timeline-mini [data-mini-target]:last-child').getAttribute('aria-current')==='true'")
-   assert page.locator('.timeline-legend').bounding_box()['y'] >= page.locator('.case-bar').bounding_box()['height']
+   nav=page.locator('.case-bar').bounding_box();legend=page.locator('.timeline-legend').bounding_box()
+   assert abs(legend['y']-(nav['y']+nav['height'])) <= 2, (nav,legend)
+   assert '到日' not in page.locator('.timeline-list').inner_text()
+   page.locator('.timeline-workbench').evaluate("el => el.classList.add('timeline-animate')")
+   assert page.locator('.timeline-pair').first.evaluate("el => parseFloat(getComputedStyle(el).animationDuration)") >= .6
+   page.locator('.timeline-workbench').evaluate("el => el.classList.remove('timeline-animate')")
    page.set_viewport_size({'width':1440,'height':900})
    page.screenshot(path=str(p/'timeline-desktop.png'))
    page.locator('[data-time-event]').first.click();assert page.locator('.timeline-editor').is_visible()
