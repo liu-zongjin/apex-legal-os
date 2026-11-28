@@ -5,6 +5,8 @@ on:
     paths:
       - scripts/macos/**
       - scripts/windows/source_server.py
+      - tests/test_macos_source_update.py
+      - tests/test_windows_source_storage.py
       - native-shell/**
       - requirements-private.txt
       - .github/workflows/macos-source-test.yml
@@ -34,6 +36,8 @@ jobs:
           bash scripts/macos/source-install.sh install
           bash scripts/macos/source-install.sh diagnose
           bash scripts/macos/source-install.sh client
+      - name: Check source update safeguards
+        run: .venv/bin/python -m unittest tests.test_macos_source_update tests.test_windows_source_storage -v
       - name: Check anonymous startup, data and shutdown
         run: .venv/bin/python scripts/macos/test_source_client.py
       - name: Verify staged update and data preservation

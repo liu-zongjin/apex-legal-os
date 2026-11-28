@@ -58,9 +58,13 @@ final class ApplicationUpdates: NSObject {
               let changes = git(["-C", root, "status", "--porcelain", "--untracked-files=normal"], timeout: 15) else {
             return (failed, "无法读取本地源码版本。请检查源码目录权限和 Git 仓库是否完整。", true)
         }
-        let remoteOutput = git(["-c", "http.lowSpeedLimit=1", "-c", "http.lowSpeedTime=15", "ls-remote", "--refs",
-                                "https://github.com/liu-zongjin/apex-legal-os.git", "refs/heads/main"], timeout: 30)
-        guard let remote = revision(in: remoteOutput?.components(separatedBy: "\t").first) else {
+        let remoteArgs = ["-c", "http.lowSpeedLimit=1", "-c", "http.lowSpeedTime=15", "ls-remote", "--refs",
+                          "https://github.com/liu-zongjin/apex-legal-os.git", "refs/heads/main"]
+        let remoteOutput = git(remoteArgs, timeout: 30)
+        let remote = revision(in: remoteOutput?.components(separatedBy: "\t").first)
+            ?? revision(in: git(["-c", "http.version=HTTP/1.1"] + remoteArgs, timeout: 30)?
+                .components(separatedBy: "\t").first)
+        guard let remote = remote else {
             return (failed, "无法从 GitHub 读取主分支版本。请检查 GitHub 网络连接或代理设置。", true)
         }
         if current == remote && changes.isEmpty {

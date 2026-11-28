@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.windows.source_server import mark_source_ready, prepare_runtime
+from scripts.windows.source_server import mark_source_ready, prepare_runtime, source_revision
 from scripts.windows.source_storage import prune, record
 from scripts.windows.proactor_shutdown import _close_with_reset_recovery
 
@@ -38,6 +38,75 @@ class SourceBackupTests(unittest.TestCase):
                 self.assertEqual(len(backups()), 3)
                 prepare_runtime(runtime, 18865, None)  # unknown or modified source remains conservative
                 self.assertEqual(len(backups()), 4)
+
+    def test_backup_failure_does_not_publish_or_advance_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            with closing(sqlite3.connect(runtime / 'legal_kb.db')) as db:
+                db.execute('create table cases (title text)')
+                db.commit()
+            marker = runtime / 'source-ready-revision'
+            marker.write_text('a' * 40)
+            with patch.dict('os.environ', {}, clear=True), patch(
+                'scripts.windows.source_server.os.replace', side_effect=OSError('disk I/O error')
+            ):
+                with self.assertRaisesRegex(RuntimeError, '数据库备份失败'):
+                    prepare_runtime(runtime, 18865, 'b' * 40)
+            self.assertEqual(marker.read_text(), 'a' * 40)
+            self.assertEqual(list((runtime / 'data/history_backups').iterdir()), [])
+            with patch.dict('os.environ', {}, clear=True):
+                prepare_runtime(runtime, 18865, 'b' * 40)
+            self.assertEqual(len(list((runtime / 'data/history_backups').glob('*.db'))), 1)
+            self.assertEqual(marker.read_text(), 'a' * 40)
+
+    def test_backup_io_error_cleans_partial_and_keeps_marker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            (runtime / 'legal_kb.db').touch()
+            marker = runtime / 'source-ready-revision'
+            marker.write_text('a' * 40)
+            real_connect = sqlite3.connect
+            class FailingSource:
+                def backup(self, target):
+                    target.execute('create table partial (id integer)')
+                    raise sqlite3.OperationalError('disk I/O error')
+                def close(self):
+                    pass
+            def connect(path, **kwargs):
+                if kwargs.get('uri'):
+                    return FailingSource()
+                return real_connect(path, **kwargs)
+            with patch.dict('os.environ', {}, clear=True), patch(
+                'scripts.windows.source_server.sqlite3.connect', side_effect=connect
+            ):
+                with self.assertRaisesRegex(RuntimeError, '数据库备份失败'):
+                    prepare_runtime(runtime, 18865, 'b' * 40)
+            self.assertEqual(marker.read_text(), 'a' * 40)
+            self.assertEqual(list((runtime / 'data/history_backups').iterdir()), [])
+
+    def test_backup_contains_uncheckpointed_wal_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = Path(directory)
+            with closing(sqlite3.connect(runtime / 'legal_kb.db')) as db:
+                db.execute('PRAGMA journal_mode=WAL')
+                db.execute('create table cases (title text)')
+                db.execute("insert into cases values ('wal data')")
+                db.commit()
+                with patch.dict('os.environ', {}, clear=True):
+                    prepare_runtime(runtime, 18865, 'a' * 40)
+                backup = next((runtime / 'data/history_backups').glob('*.db'))
+                with closing(sqlite3.connect(backup)) as saved:
+                    self.assertEqual(saved.execute('select title from cases').fetchone()[0], 'wal data')
+                    self.assertEqual(saved.execute('pragma quick_check').fetchone()[0], 'ok')
+
+    def test_revision_uses_old_git_compatible_status_and_rejects_changes(self):
+        revision = b'a' * 40
+        with patch('scripts.windows.source_server.subprocess.check_output', side_effect=[b'', revision + b'\n']) as git:
+            self.assertEqual(source_revision(), revision.decode())
+            self.assertIn('--porcelain', git.call_args_list[0].args[0])
+        with patch('scripts.windows.source_server.subprocess.check_output', return_value=b' M file\n') as git:
+            self.assertIsNone(source_revision())
+            self.assertEqual(git.call_count, 1)
 
 
 class SourceEnvironmentCleanupTests(unittest.TestCase):

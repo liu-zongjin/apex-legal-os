@@ -23,18 +23,15 @@ from scripts.windows.proactor_shutdown import install as install_shutdown_recove
 
 def source_revision():
     try:
-        result = subprocess.check_output(
-            ['git', 'status', '--porcelain=v2', '--branch', '--untracked-files=normal'],
-            cwd=ROOT, stderr=subprocess.DEVNULL, timeout=15,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-        )
-        revision = None
-        for line in result.splitlines():
-            if line.startswith(b'# branch.oid '):
-                revision = line[len(b'# branch.oid '):]
-            elif not line.startswith(b'# '):
-                return None
-        if revision and len(revision) == 40 and all(c in b'0123456789abcdef' for c in revision):
+        options = dict(cwd=ROOT, stderr=subprocess.DEVNULL, timeout=15,
+                       creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        # Porcelain v1 works with older Git versions still shipped on some Macs.
+        changes = subprocess.check_output(
+            ['git', 'status', '--porcelain', '--untracked-files=normal'], **options)
+        if changes:
+            return None
+        revision = subprocess.check_output(['git', 'rev-parse', '--verify', 'HEAD'], **options).strip()
+        if len(revision) == 40 and all(c in b'0123456789abcdef' for c in revision):
             return revision.decode('ascii')
         return None
     except (OSError, subprocess.SubprocessError):
@@ -64,11 +61,23 @@ def prepare_runtime(path, port, revision=None):
         backups = runtime / 'data' / 'history_backups'
         backups.mkdir(parents=True, exist_ok=True)
         backup = backups / ('before-source-start-' + time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex + '.db')
-        with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)) as source:
-            with closing(sqlite3.connect(backup)) as target:
-                source.backup(target)
-                if target.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
-                    raise RuntimeError('Database backup integrity check failed')
+        # Publish only a completed, checked backup. Incomplete files must never
+        # look like usable backups to a person or the storage manager.
+        partial = backup.with_suffix('.db.partial')
+        try:
+            with closing(sqlite3.connect(database.resolve().as_uri() + '?mode=ro', uri=True)) as source:
+                with closing(sqlite3.connect(partial)) as target:
+                    source.backup(target)
+                    if target.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
+                        raise RuntimeError('Database backup integrity check failed')
+            os.replace(partial, backup)
+        except Exception as exc:
+            for suffix in ('', '-journal', '-wal', '-shm'):
+                try:
+                    Path(str(partial) + suffix).unlink(missing_ok=True)
+                except OSError:
+                    pass  # Preserve leftovers if the OS denies cleanup.
+            raise RuntimeError(f'源码启动前数据库备份失败，未继续启动；请检查磁盘空间、权限和备份目录：{backups}') from exc
     return runtime
 
 

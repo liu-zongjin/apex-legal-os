@@ -38,7 +38,16 @@ if [[ "$ACTION" == install ]]; then
   "$VENV/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 12)' || fail '现有虚拟环境不是 Python 3.12。'
   "$VENV/bin/python" -m pip install --no-cache-dir -r "$ROOT/requirements-private.txt" 'playwright==1.64.0' 'Send2Trash==1.8.3'
   "$VENV/bin/python" -m pip check
-  "$VENV/bin/python" -m playwright install chromium
+  # Let Playwright register this environment in its shared-cache registry. If
+  # cache cleanup fails, accept it only after testing both required browsers.
+  if ! "$VENV/bin/python" -m playwright install chromium; then
+    printf 'Playwright 安装或缓存清理失败；正在检查当前版本浏览器是否可用。\n' >&2
+    if "$VENV/bin/python" "$ROOT/scripts/macos/check_source_chromium.py"; then
+      printf '浏览器已可用；已保留共享缓存，安装继续。\n' >&2
+    else
+      fail 'Chromium 未通过验证；请检查网络、缓存权限及锁文件后重跑 install。'
+    fi
+  fi
   exit 0
 fi
 [[ -x "$VENV/bin/python" ]] || fail '请先执行 install。'
