@@ -40,6 +40,18 @@ STATEMENT_LABELS = {'fact':'事实','legal':'法律观点','request':'请求','o
 LABELS = {'supported': 'AI初核支持', 'contradicted': 'AI初核矛盾', 'not_found': '未找到出处', 'inference': '推断／待核'}
 
 
+def timeline_party_sides(parties):
+    groups = {}
+    for party in parties:
+        role = str(party.get('role') or '')
+        for key in ('被告', '原告', '被上诉人', '上诉人', '被申请人', '申请人'):
+            if key in role:
+                label = key + '方' if key in ('原告', '被告') else key
+                groups.setdefault(label, set()).add('client' if party.get('party_group') == 'client' else 'other')
+                break
+    return {label:next(iter(values)) for label, values in groups.items() if len(values) == 1}
+
+
 def stamp():
     return dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
 
@@ -1217,15 +1229,7 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
             service.launch(root, job)
         # A procedural role is not inherently the client's side. Only assign a
         # side when every recorded party with that role has the same group.
-        role_groups = {}
-        for party in service.parties(case_id):
-            role = str(party.get('role') or '')
-            for key in ('被告', '原告', '被上诉人', '上诉人', '被申请人', '申请人'):
-                if key in role:
-                    label = key + '方' if key in ('原告', '被告') else key
-                    role_groups.setdefault(label, set()).add('client' if party.get('party_group') == 'client' else 'other')
-                    break
-        sides = {label:next(iter(groups)) for label, groups in role_groups.items() if len(groups) == 1}
+        sides = timeline_party_sides(service.parties(case_id))
         def word_locations():
             from docx import Document
             locations, cache = {}, {}
@@ -1332,7 +1336,7 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         require_action(request)
         body=await request.json()
         if not isinstance(body,dict):raise HTTPException(422,'时间轴参数无效')
-        from .case_timeline import review_events,artifacts,grounded_event,MAX_EVENTS
+        from .case_timeline import review_events,artifacts,grounded_event,date_bounds,MAX_EVENTS
         def save_review():
             with service.lock:
                 root,job=service.load(case_id,job_id)
@@ -1350,16 +1354,29 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                 if digest(cache)!=job['parsed_sha256']:raise HTTPException(409,'解析底稿已变化')
                 fragments=json.loads(cache.read_text(encoding='utf-8'))['sources']
                 for proposal in manual:
-                    row=grounded_event(proposal,fragments)
+                    if isinstance(proposal,dict) and proposal.get('path'):
+                        _,item=service.source(root,proposal['path'])
+                        description=plain(proposal.get('description',''),1200)
+                        date_text=plain(proposal.get('date_text',''),100)
+                        actors=plain(proposal.get('actors',''),300)
+                        party=plain(proposal.get('party','待确认'),100) or '待确认'
+                        if not description:raise HTTPException(422,'请填写事件内容')
+                        ref={'id':uuid.uuid4().hex,'path':item['path'],'sha256':item['sha256'],'locator':'用户关联文件，尚未定位原文','chunk_index':0,'party':party,'document_type':'案件材料','vision':False,'quote':''}
+                        row={'id':uuid.uuid4().hex[:24],'description':description,'actors':actors,'date_text':date_text,'topic':'','category':'其他','party':party,'document_type':'案件材料',**date_bounds(date_text),'evidence':[ref],'review_status':'amended','review_note':'用户手动添加并关联文件','requires_review':False,'original':{'date_text':date_text,'description':description,'actors':actors},'manual_unverified':True}
+                    else:
+                        row=grounded_event(proposal,fragments)
                     if not row:raise HTTPException(422,'补录事件必须有本任务材料的逐字引句')
                     if any(event['id']==row['id'] for event in job['timeline_events']):raise HTTPException(409,'已有相同事件，请直接编辑原记录')
-                    row['origin']='manual';row['review_note']='人工补录，待复核'
+                    row['origin']='manual';row['review_note']=row.get('review_note') or '人工补录，待复核'
                     job['timeline_events'].append(row)
                 job['revision']+=1
                 folder=service.directory(root,job_id)/('v'+str(job['revision'])+'-'+uuid.uuid4().hex[:8]);folder.mkdir()
                 try:
                     if job['claims']:service.fact_artifacts(job,folder)
                     artifacts(job,folder)
+                    for event in job['timeline_events']:
+                        if event.get('manual_unverified'):
+                            for ref in event['evidence']:service.source(root,ref['path'],ref['sha256'])
                     for source in job['sources']+([job['draft_source']] if job.get('draft_source') else []):
                         service.source(root,source['path'],source['sha256'])
                     if service.root(case_id)!=root:raise HTTPException(409,'案件文件夹绑定已变化')
@@ -1370,6 +1387,64 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                     shutil.rmtree(folder,ignore_errors=True);raise
                 return job
         return await _run_in_thread(save_review)
+
+    @app.post('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-export-pdf')
+    async def export_timeline_pdf(case_id: int, job_id: str, request: Request):
+        require_action(request)
+        body=await request.json()
+        if not isinstance(body,dict) or not isinstance(body.get('revision'),int):raise HTTPException(422,'导出版本无效')
+        def export():
+            from .timeline_presentation import fishbone_pdf
+            from .case_timeline import ordered
+            from .download_center import get_store
+            with service.lock:
+                root,job=service.load(case_id,job_id)
+                if job['kind']!='timeline' or job['status']!='completed' or body['revision']!=job['revision']:
+                    raise HTTPException(409,'请先载入当前已保存的时间轴')
+                for source in job['sources']+([job['draft_source']] if job.get('draft_source') else []):service.source(root,source['path'],source['sha256'])
+                for event in job['timeline_events']:
+                    if event.get('manual_unverified'):
+                        for ref in event['evidence']:service.source(root,ref['path'],ref['sha256'])
+                base=service.directory(root,create=True)
+                scope=body.get('filter','all');party=body.get('party','');category=body.get('category','')
+                if scope not in ('all','unknown','pending') or not isinstance(party,str) or len(party)>100 or not isinstance(category,str) or len(category)>100:
+                    raise HTTPException(422,'请先选择要导出的时间轴事件')
+                def visible(row):
+                    return row['review_status']!='excluded' and (scope=='all' or (scope=='unknown' and row.get('date_precision')=='unknown') or row['review_status']==scope) and (not party or (row.get('party') or (row.get('evidence') or [{}])[0].get('party') or '待确认')==party) and (not category or (row.get('category') or '其他')==category)
+                selected=[row for row in ordered(job['timeline_events']) if visible(row)]
+                if not selected:raise HTTPException(422,'当前筛选没有可导出的事件')
+                from .case_timeline import numeric_claims_supported
+                valid={row['id'] for row in job['timeline_events'] if row.get('review_status')!='excluded' and row.get('evidence') and numeric_claims_supported(row.get('description',''),row['evidence'][0].get('quote',''))}
+                conflicts={identity for issue in job.get('timeline_issues',[]) if issue.get('type')=='possible_conflict' and len(set(issue.get('event_ids',[]))&valid)>=2 for identity in issue['event_ids'] if identity in valid}
+                output=base/'时间轴成果'
+                if output.is_symlink():raise HTTPException(409,'时间轴成果目录不能是符号链接')
+                try:output.mkdir(exist_ok=True)
+                except FileExistsError:raise HTTPException(409,'时间轴成果位置被文件占用，请先调整名称')
+                if not output.is_dir() or output.resolve().parent!=base.resolve():raise HTTPException(409,'时间轴成果目录不可用')
+                fd,tmp=tempfile.mkstemp(prefix='.时间轴-',suffix='.pdf',dir=output);os.close(fd);target=None
+                try:
+                    fishbone_pdf(selected,timeline_party_sides(service.parties(case_id)),tmp,include_evidence=True,conflict_ids=conflicts)
+                    for source in job['sources']+([job['draft_source']] if job.get('draft_source') else []):service.source(root,source['path'],source['sha256'])
+                    if service.root(case_id,writable=True)!=root:raise HTTPException(409,'案件文件夹绑定已变化')
+                    date=dt.datetime.now().strftime('%Y-%m-%d %H-%M-%S')
+                    for number in range(1,1000):
+                        suffix='' if number==1 else f' ({number})'
+                        target=output/f'案件事实时间轴 {date}{suffix}.pdf'
+                        try:
+                            reserve=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600);os.close(reserve);break
+                        except FileExistsError:target=None
+                    if target is None:raise HTTPException(409,'导出文件过多，请稍后重试')
+                    os.replace(tmp,target)
+                    with service.get_db() as conn:case=conn.execute('SELECT title FROM case_manager_cases WHERE id=?',(case_id,)).fetchone()
+                    size=target.stat().st_size
+                    record=get_store().create(name=target.name,source='案件时间轴',category='case',purpose='case',status='completed',phase='导出完成',case_id=case_id,case_title=case[0] if case else '',case_saved=True,path=str(target),destination=str(target),received_bytes=size,total_bytes=size,completed_files=1)
+                    return {'id':record['id'],'name':target.name}
+                except Exception:
+                    if target is not None:target.unlink(missing_ok=True)
+                    raise
+                finally:
+                    Path(tmp).unlink(missing_ok=True)
+        return await _run_in_thread(export)
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-preview')
     def timeline_preview(case_id: int,job_id: str,revision: int,style: str='axis',include_evidence: bool=True):
@@ -1458,6 +1533,8 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         root,job=service.load(case_id,job_id)
         item=next((item for item in job['sources'] if item['path']==path),None)
         if not item:
+            item=next((ref for row in job.get('timeline_events',[]) if row.get('manual_unverified') for ref in row.get('evidence',[]) if ref.get('path')==path),None)
+        if not item:
             raise HTTPException(404,'材料不属于本次任务')
         service.source(root,item['path'],item['sha256'])
         original=service.input_path(root,job,item)
@@ -1522,6 +1599,8 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
             from html import escape
             root,job=service.load(case_id,job_id)
             item=next((item for item in job['sources'] if item['path']==path),None)
+            if not item:
+                item=next((ref for row in job.get('timeline_events',[]) if row.get('manual_unverified') for ref in row.get('evidence',[]) if ref.get('path')==path),None)
             if not item: raise HTTPException(404,'材料不属于本次任务')
             service.source(root,item['path'],item['sha256'])
             original=service.input_path(root,job,item)

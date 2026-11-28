@@ -569,7 +569,7 @@ function canOfflineEditCase() {
 async function initOfflineSupport() {
   if ('serviceWorker' in navigator && window.isSecureContext &&
       !/LegalKB-NativeShell/.test(navigator.userAgent || '')) {
-    navigator.serviceWorker.register('/case-manager-sw.js?v=418', { updateViaCache: 'none' })
+    navigator.serviceWorker.register('/case-manager-sw.js?v=421', { updateViaCache: 'none' })
       .then(reg => { if (reg && reg.update) return reg.update(); })
       .catch(() => {});
   }
@@ -3001,10 +3001,18 @@ function selectedCaseIds() {
   return [...state.selectedCaseIds];
 }
 function toggleCaseListEditing() {
+  const content = $('content');
+  const wrap = content.querySelector('.table-wrap');
+  const horizontal = content.querySelector('.table-x-scroll');
+  const position = { contentTop: content.scrollTop, top: wrap?.scrollTop || 0, left: horizontal?.scrollLeft || 0 };
   state.caseListEditing = !state.caseListEditing;
   if (!state.caseListEditing) state.selectedCaseIds.clear();
   render();
-  renderTable();
+  content.scrollTop = position.contentTop;
+  const newWrap = content.querySelector('.table-wrap');
+  const newHorizontal = content.querySelector('.table-x-scroll');
+  if (newWrap) newWrap.scrollTop = position.top;
+  if (newHorizontal) newHorizontal.scrollLeft = position.left;
 }
 async function bulkDeleteCases() {
   if (!requireOnlineAction()) return;
@@ -3419,9 +3427,7 @@ function remainingDaysHtml(value) {
 function actionButtons(tab, item, itemJson) {
   if (tab === 'cases') {
     return `<div class="actions">
-      <button class="btn" onclick='event.stopPropagation(); openCaseFiles(${Number(item.id)}, ${JSON.stringify(item.title || '案件').replace(/'/g, '\\u0027')})'>案件文件</button>
-      <button class="btn" onclick="event.stopPropagation(); openCaseArchive(${Number(item.id)})">案卷归档</button>
-      <button class="btn" onclick='event.stopPropagation(); openDetail("cases", ${Number(item.id)})'>查看</button>
+      <button class="btn case-workflows-action" type="button" onclick='event.stopPropagation(); openCaseWorkflows(${Number(item.id)}, ${JSON.stringify(item.title || '案件').replace(/'/g, '\\u0027')})'>案件中台 <span aria-hidden="true">↗</span></button>
     </div>`;
   }
   if (isOfflineReadonly()) {

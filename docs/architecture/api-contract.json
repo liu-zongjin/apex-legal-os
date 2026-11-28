@@ -2277,6 +2277,11 @@
       "source": "backend/case_workflows.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-export-pdf",
+      "source": "backend/case_workflows.py"
+    },
+    {
       "method": "GET",
       "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-fragments",
       "source": "backend/case_workflows.py"

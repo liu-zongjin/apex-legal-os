@@ -297,6 +297,23 @@ def run(output):
                 page.locator('#timelineEvidence').check()
                 page.locator('#saveTimeline').click()
                 page.get_by_text('当前成果版本：6',exact=False).wait_for()
+                export_calls=[]
+                def fake_export(route):
+                    export_calls.append(route.request.post_data_json)
+                    route.fulfill(status=200,content_type='application/json',body=json.dumps({'id':'fixture-export','name':'案件事实时间轴.pdf'},ensure_ascii=False))
+                page.route('**/timeline-export-pdf',fake_export)
+                open_calls=[]
+                def fake_open(route):
+                    open_calls.append(True)
+                    route.fulfill(status=200,content_type='application/json',body='{"ok":true}')
+                page.route('**/api/download-center/records/fixture-export/open',fake_open)
+                page.locator('#exportTimelinePDF').click()
+                page.get_by_text('已导出：案件事实时间轴.pdf',exact=False).wait_for()
+                assert export_calls and export_calls[0]['revision']==6 and export_calls[0]['filter']=='all'
+                assert page.locator('#timelineExportFolder').is_visible()
+                page.wait_for_function("document.getElementById('toast').textContent.includes('已打开所在文件夹')")
+                page.locator('#timelineExportFolder').click()
+                assert len(open_calls)==2
                 page.locator('.export-preview > summary').click()
                 page.locator('.export-paper img').evaluate('(image)=>image.decode()')
                 page.screenshot(path=str(output/'时间轴-样式选择与预览.png'),full_page=True)
@@ -306,7 +323,7 @@ def run(output):
                 page.locator('#detailPanel').scroll_into_view_if_needed()
                 page.evaluate('window.scrollTo(0,0)');page.screenshot(path=str(output/'时间轴-1440-light.png'),full_page=True)
                 downloads=page.locator('#detail .timeline-delivery > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent}))')
-                assert len(downloads)==6
+                assert len(downloads)==5 and all(not item['name'].endswith('.json') for item in downloads)
                 for download in downloads:
                     response=page.request.get(base+download['url']);assert response.ok
                     (output/download['name']).write_bytes(response.body())
@@ -321,7 +338,27 @@ def run(output):
                 page.locator('#tasks [data-job]').first.click()
                 page.locator('#saveTimeline').wait_for(state='attached');page.locator('.timeline-delivery > summary').click()
                 assert page.locator('[data-time-event]').count()==3
+                page.locator('.case-actions').hover();page.locator('#topTimelineManual').click()
+                assert page.locator('#manualEventDialog').is_visible()
+                picker=page.frame_locator('#manualEventPicker')
+                picker.locator('.file-row').filter(has_text='03_草稿.txt').click()
+                picker.locator('#archiveAssignBtn').click()
+                page.get_by_text('已关联：03_草稿.txt').wait_for()
+                page.locator('#manualEventDate').fill('2026年9月1日')
+                page.locator('#manualEventDescription').fill('手动添加的10元事件')
+                page.locator('#manualEventForm button[type="submit"]').click()
+                page.locator('#manualEventDialog').wait_for(state='hidden')
+                page.get_by_text('手动添加的10元事件').first.wait_for()
+                manual_card=page.locator('.timeline-entry').filter(has_text='手动添加的10元事件')
+                assert '数值与引文不一致' not in manual_card.inner_text()
+                assert '尚未定位原文' in manual_card.inner_text()
                 page.locator('.case-actions').hover();page.locator('#topTimelineAdd').click()
+                assert frame.locator('.file-row').filter(has_text='Stella办案成果').count()==0
+                frame.locator('#fileSearch').fill('task.json')
+                frame.locator('.search-head').wait_for()
+                assert frame.locator('.search-row[data-path^="Stella办案成果/"]').count()==0
+                frame.locator('#fileSearch').fill('')
+                frame.locator('.file-row').filter(has_text='01_合同.pdf').wait_for()
                 frame.locator('.file-row').filter(has_text='01_合同.pdf').click()
                 notice=page.locator('#timelineDuplicateNotice')
                 notice.wait_for()
@@ -353,12 +390,12 @@ def run(output):
                 assert '被告方' in page.locator('#sources summary').inner_text()
                 page.locator('#submit').click()
                 page.locator('#saveTimeline').wait_for(timeout=20000)
-                page.wait_for_function("document.querySelectorAll('[data-time-event]').length===4")
+                page.wait_for_function("document.querySelectorAll('[data-time-event]').length===5")
                 page.locator('[data-time-select]').first.check()
                 page.locator('[data-time-select]').nth(1).check()
                 page.locator('#refresh').click()
                 page.locator('#removeTimelineSelected').click()
-                page.wait_for_function("document.querySelectorAll('[data-time-event]').length===2")
+                page.wait_for_function("document.querySelectorAll('[data-time-event]').length===3")
                 page.locator('[data-time-filter="excluded"]').click()
                 assert page.locator('[data-time-event]').count()==2
                 page.locator('[data-time-filter="all"]').click()

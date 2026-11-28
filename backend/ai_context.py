@@ -161,6 +161,10 @@ def case_scope(context, records=None):
     context = context or {}
     value = context.get('caseId') if isinstance(context, dict) else None
     ids = {int(value)} if value else set()
+    if isinstance(context, dict) and context.get('type') == 'combined' and 'files' in (context.get('kinds') or []):
+        files = context.get('files') or {}
+        if isinstance(files, dict) and files.get('type') == 'case_files' and files.get('caseId'):
+            ids.add(int(files['caseId']))
     for r in records or []:
         cid = (r.get('caseLink') or {}).get('caseId')
         if cid:

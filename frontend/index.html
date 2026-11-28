@@ -348,6 +348,10 @@
     </div>
 
     <nav class="sidebar-nav" id="sidebar-nav">
+      <a class="nav-item" href="#" onclick="openCaseManagerTab(); return false;" title="打开案件管理">
+        <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true"><rect x="3" y="3" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M6 2h6v3H6zM6 8h6M6 11h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        案件管理
+      </a>
       <div class="nav-section" id="nav-sec-view" data-section="view">
         <div class="nav-section-header" onclick="toggleSection('view')">
           <span class="nav-section-title">知识库</span>
@@ -3337,13 +3341,13 @@
   <script defer src="/static/stella-welcome.js?v=15"></script>
   <script defer src="/static/settings-accordion.js?v=2026112201"></script>
   <script defer src="/static/home-workbench.js?v=2026111501"></script>
-  <script src="/static/apex-feature-loader.js?v=20261128timeline2"></script>
+  <script src="/static/apex-feature-loader.js?v=20261128casehubfix"></script>
   <script src="/static/ask-reasoning-slider.js?v=2026111410"></script>
   <script src="/static/search-shortcut.js?v=2" data-workspace-host></script>
   <link rel="stylesheet" href="/static/workbuddy-settings.css?v=2">
   <script defer src="/static/workbuddy-settings.js?v=4"></script>
   <script src="/static/summary-generation-glow.js?v=1"></script>
-  <script src="/static/app-bootstrap.js?v=20261128timeline2"></script>
+  <script src="/static/app-bootstrap.js?v=20261128windows"></script>
   <script src="/static/article-tables.js?v=2026102801"></script>
   <script src="/static/user-memory.js?v=5"></script>
   <script src="/static/sidebar-directory.js?v=2026112201"></script>
@@ -3353,7 +3357,7 @@
   <script>
     const isLegalKBNativeShell = /LegalKB-NativeShell/.test(navigator.userAgent || '');
     if ('serviceWorker' in navigator && window.isSecureContext && !isLegalKBNativeShell) {
-      navigator.serviceWorker.register('/case-manager-sw.js?v=418', { updateViaCache: 'none' })
+      navigator.serviceWorker.register('/case-manager-sw.js?v=421', { updateViaCache: 'none' })
         .then(function(reg) { if (reg && reg.update) return reg.update(); })
         .catch(function() {});
     } else if ('serviceWorker' in navigator && isLegalKBNativeShell) {

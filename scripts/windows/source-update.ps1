@@ -25,6 +25,11 @@ if (-not (Test-Path -LiteralPath $link)) { throw '未找到源码版桌面快捷
 if ($BrowserMode) {
     & $currentPython $browserShortcut verify $link --root $root
     if ($LASTEXITCODE -ne 0) { throw '未能验证当前浏览器快捷方式，未作修改。' }
+    $stopLink = Join-Path $desktop '退出 Stella.lnk'
+    if (Test-Path -LiteralPath $stopLink) {
+        & $currentPython $browserShortcut verify $stopLink --root $root --stop
+        if ($LASTEXITCODE -ne 0) { throw '退出快捷方式属于其他安装，未作修改。' }
+    }
 } else {
     $oldShortcut = $shell.CreateShortcut($link)
     if ($oldShortcut.TargetPath -ne $currentExe -or $oldShortcut.Arguments -ne $currentArgs) {
@@ -66,8 +71,11 @@ try {
     Copy-Item -LiteralPath $link -Destination $backup
     $tempLink = Join-Path $desktop ('.Stella-update-' + [guid]::NewGuid().ToString('N') + '.lnk')
     if ($BrowserMode) {
-        & $currentPython $browserShortcut create $tempLink --root $folder
+        & $currentPython (Join-Path $folder 'scripts\windows\source_browser_shortcut.py') create $tempLink --root $folder
         if ($LASTEXITCODE -ne 0) { throw '未能创建候选浏览器快捷方式，旧版本未变。' }
+        $tempStopLink = Join-Path $desktop ('.Stella-stop-' + [guid]::NewGuid().ToString('N') + '.lnk')
+        & $currentPython (Join-Path $folder 'scripts\windows\source_browser_shortcut.py') create $tempStopLink --root $folder --stop
+        if ($LASTEXITCODE -ne 0) { throw '未能创建退出快捷方式，旧版本未变。' }
     } else {
         $next = $shell.CreateShortcut($tempLink)
         $next.TargetPath = $newExe
@@ -78,6 +86,7 @@ try {
         $next.Save()
     }
     Move-Item -LiteralPath $tempLink -Destination $link -Force
+    if ($BrowserMode) { Move-Item -LiteralPath $tempStopLink -Destination $stopLink -Force }
     try {
         & (Join-Path $root '.venv\Scripts\python.exe') $storage prune --versions $versions --runtime $runtime --current (Split-Path -Leaf $folder) --previous (Split-Path -Leaf $root)
         if ($LASTEXITCODE -ne 0) { Write-Warning '旧环境检查未完成，已保留剩余文件。' }

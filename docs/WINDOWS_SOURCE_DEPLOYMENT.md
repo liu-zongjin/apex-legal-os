@@ -15,8 +15,8 @@
    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\source-install.ps1 -Action quick
    ```
 
-   安装会检查本机依赖，仅在需要时通过 winget 补装 Git 和 Python，准备项目内 `.venv`，创建桌面快捷方式 **Stella Source (Browser)**，并启动 Stella。已有依赖和指向同一源码目录的快捷方式可复用。若 winget 不可用，通过官方渠道补齐 Python 3.12 x64 和 Git 后重试。执行策略仅用于这一次 PowerShell 进程。
-3. 确认浏览器实际显示工作台首页，地址是 `http://127.0.0.1:18865/`。若浏览器未自动弹出，可手动打开该地址。日常双击快捷方式即可启动。退出时在 Stella 服务窗口按 **Ctrl+C**，等待保存和退出。只关闭浏览器标签页会让本地服务继续运行。请验证退出后端口释放、双击重开可以读取已有资料。端口占用时，先核实占用者。
+   安装会检查本机依赖，仅在需要时通过 winget 补装 Git 和 Python，准备项目内 `.venv`，创建桌面快捷方式 **Stella Source (Browser)** 和 **退出 Stella**，并启动 Stella。已有依赖和指向同一源码目录的快捷方式可复用。若 winget 不可用，通过官方渠道补齐 Python 3.12 x64 和 Git 后重试。执行策略仅用于这一次 PowerShell 进程。
+3. 确认浏览器实际显示工作台首页，地址是 `http://127.0.0.1:18865/`。日常双击 Stella 快捷方式，服务在后台启动，准备就绪后打开浏览器；首次启动和数据备份仍需时间。只关闭浏览器标签页会让本地服务继续运行；保存工作后双击桌面 **退出 Stella** 可正常关闭服务。请验证退出后端口释放、双击重开可以读取已有资料。启动失败时查看 `%LOCALAPPDATA%\StellaSource\browser-server.log`，分享前去除个人信息。端口占用时先核实占用者。
 
 已有源码和 Python 环境时，也可用 `-Action browser` 直接启动并自动打开页面。没有 Git 时，先从官方来源获取源码 ZIP，在临时目录运行 `-Action provision -BrowserMode`，安装后重新打开终端再克隆。此方式同样会补装缺失的 Python。
 
@@ -41,6 +41,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\source-upd
 ```
 
 将 `<官方提交号>` 替换成实际值。更新会在独立目录下载和验证候选版本，用临时空白资料检查首页、启动与退出，通过后才切换浏览器快捷方式。重新打开并确认原有案件可读。旧源码与快捷方式备份可用于排查；如已发生数据库迁移，回退前须核对备份与数据库兼容性。
+
+从仍显示黑色窗口的旧版首次更新后，如果桌面入口仍指向 `python.exe`，请在已核实的新源码目录执行 `-Action quick -NoLaunch`，升级同一安装的桌面入口并创建退出入口；不要覆盖指向其他安装的快捷方式。
 
 ## 原生桌面窗口（Tauri，可选）
 

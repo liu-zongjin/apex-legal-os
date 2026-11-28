@@ -50,6 +50,10 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    fused=page.locator('.case-fused-legend').bounding_box()
    assert abs(nav['y']) <= 1 and abs(fused['y']-(nav['y']+nav['height']))<=2, (nav,fused)
    assert abs(fused['x']-nav['x'])<=2 and abs(fused['width']-nav['width'])<=2
+   page.wait_for_timeout(350)
+   assert float(page.locator('.timeline-rail h2').evaluate('(el)=>getComputedStyle(el).opacity'))<.05
+   mini=page.locator('.timeline-mini').bounding_box()
+   assert abs(mini['y']+mini['height']/2-250)<4, mini
    assert page.locator('#refresh').inner_text()=='筛选'
    page.locator('#refresh').click()
    assert page.locator('.timeline-tools-panel').is_visible()
@@ -57,7 +61,7 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    popup=page.locator('.timeline-tools-panel').bounding_box()
    assert abs((popup['x']+popup['width'])-(nav['x']+nav['width']-17))<30
    assert popup['y'] >= nav['y']+nav['height']-12
-   page.locator('.timeline-rail h2').click()
+   page.mouse.click(5,450)
    assert page.locator('.timeline-tools').get_attribute('open') is None
    page.locator('[data-time-event]').last.click()
    page.wait_for_function("document.body.classList.contains('timeline-fused')")

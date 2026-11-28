@@ -5327,7 +5327,7 @@ function initOpenPagesOverview() {
   categoryNav?.addEventListener('click', activateHoveredCategory);
 
   window.addEventListener('keydown', event => {
-    if (event.key === 'Meta') {
+    if (!SHORTCUT_WINDOWS && event.key === 'Meta') {
       handleOpenPagesCommandDown({
         repeat: event.repeat,
         code: event.code,
@@ -5343,7 +5343,7 @@ function initOpenPagesOverview() {
   }, true);
 
   window.addEventListener('keyup', event => {
-    if (event.key !== 'Meta') return;
+    if (SHORTCUT_WINDOWS || event.key !== 'Meta') return;
     if (openPagesOverviewKeyState.commandCode
         && normalizeOpenPagesCommandCode(event.code, event.location) !== openPagesOverviewKeyState.commandCode) return;
     resetOpenPagesCommandState();
@@ -5562,14 +5562,14 @@ function initOpenPagesOverview() {
             cancelPendingOpenPagesCommand();
             return;
           }
-          if (event.key === 'Meta') {
+          if (!SHORTCUT_WINDOWS && event.key === 'Meta') {
             handleOpenPagesCommandDown({ repeat: event.repeat, code: event.code, location: event.location });
           } else {
             cancelPendingOpenPagesCommand();
           }
         }, true);
         frameWindow.addEventListener('keyup', event => {
-          if (event.key !== 'Meta') return;
+          if (SHORTCUT_WINDOWS || event.key !== 'Meta') return;
           if (openPagesOverviewKeyState.commandCode
               && normalizeOpenPagesCommandCode(event.code, event.location) !== openPagesOverviewKeyState.commandCode) return;
           resetOpenPagesCommandState();
@@ -5641,6 +5641,7 @@ function getCaseFilesTabForMessageSource(source) {
 }
 
 function handleCaseManagerCommandMessage(data) {
+  if (SHORTCUT_WINDOWS) return;
   if (data.eventType === 'down') {
     handleOpenPagesCommandDown({ repeat: !!data.repeat, code: data.code || '', location: Number(data.location) || 0 });
   } else if (data.eventType === 'cancel') {
@@ -19754,6 +19755,7 @@ async function deleteArticle(id) {
    键盘快捷键初始化
 ───────────────────────────────────────────── */
 const SHORTCUT_BINDINGS_KEY = window.ApexSearchShortcut?.bindingKey || 'legal_kb_shortcut_bindings_v1';
+const SHORTCUT_WINDOWS = /Win/i.test(navigator.userAgentData?.platform || navigator.platform || navigator.userAgent);
 const SHORTCUT_KEY_ROWS = [
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='],
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -19784,7 +19786,7 @@ const DEFAULT_SHORTCUT_BINDINGS = Object.freeze({
 });
 let shortcutKeyFilter = 'all';
 let selectedShortcutKey = '';
-let shortcutBulkFrom = 'alt', shortcutBulkTo = 'meta';
+let shortcutBulkFrom = 'alt', shortcutBulkTo = SHORTCUT_WINDOWS ? 'ctrl' : 'meta';
 
 // 快捷键功能目录以页面类型为唯一来源。新增加一个可独立打开的 TAB_TYPES
 // 页面后，会自动出现在这里；只有必须依附某篇文章、某个案件或外部链接的
@@ -19907,16 +19909,16 @@ function saveShortcutBindings(bindings) {
 }
 
 function shortcutModifierLabel(modifier) {
-  return ({ meta: '⌘', alt: '⌥', ctrl: '⌃', shift: '⇧' })[modifier] || modifier;
+  return (SHORTCUT_WINDOWS ? { meta: 'Win', alt: 'Alt', ctrl: 'Ctrl', shift: 'Shift' } : { meta: '⌘', alt: '⌥', ctrl: '⌃', shift: '⇧' })[modifier] || modifier;
 }
 
 function formatShortcut(binding, key, words = false) {
   if (!binding) return '未绑定';
-  const labels = words
+  const labels = SHORTCUT_WINDOWS ? { meta: 'Win', alt: 'Alt', ctrl: 'Ctrl', shift: 'Shift' } : words
     ? { meta: 'Command', alt: 'Option', ctrl: 'Control', shift: 'Shift' }
     : { meta: '⌘', alt: '⌥', ctrl: '⌃', shift: '⇧' };
   const modifiers = ['ctrl', 'alt', 'shift', 'meta'].filter(item => binding.modifiers.includes(item)).map(item => labels[item]);
-  return words ? `${modifiers.join(' + ')} + ${key.toUpperCase()}` : `${modifiers.join('')}${key.toUpperCase()}`;
+  return words || SHORTCUT_WINDOWS ? `${modifiers.join(' + ')} + ${key.toUpperCase()}` : `${modifiers.join('')}${key.toUpperCase()}`;
 }
 
 function shortcutKeyFromEvent(event) {
@@ -20011,6 +20013,22 @@ window.stellaHandleNativeReloadShortcut = function () {
 function renderShortcutKeyboard() {
   const keyboard = document.getElementById('shortcut-keyboard');
   if (!keyboard) return;
+  if (SHORTCUT_WINDOWS) {
+    document.querySelectorAll('[data-bulk-from], [data-bulk-to]').forEach(button => {
+      const modifier = button.dataset.bulkFrom || button.dataset.bulkTo;
+      button.textContent = shortcutModifierLabel(modifier);
+      button.hidden = modifier === 'meta';
+      if (modifier === 'meta') button.style.display = 'none';
+      button.setAttribute('aria-pressed', String(modifier === (button.dataset.bulkFrom ? shortcutBulkFrom : shortcutBulkTo)));
+    });
+    const notes = document.querySelectorAll('.shortcut-system-notes kbd');
+    if (notes[0]) notes[0].textContent = 'Ctrl + F';
+    const overview = Object.entries(loadShortcutBindings()).find(([, binding]) => binding.actionId === 'page_overview');
+    if (notes[2]) notes[2].textContent = overview ? formatShortcut(overview[1], overview[0]) : '未绑定';
+    const holdSettings = document.getElementById('settings-section-open-pages');
+    if (holdSettings) { holdSettings.hidden = true; holdSettings.style.display = 'none'; }
+    renderOpenPagesCommandSideSetting();
+  }
   const bindings = loadShortcutBindings();
   const actionMap = new Map(getShortcutActions().map(action => [action.id, action]));
   const total = SHORTCUT_KEY_ROWS.flat().length;
@@ -20050,7 +20068,7 @@ function renderShortcutEditor() {
     <div class="shortcut-editor-key" aria-hidden="true">${escapeHtml(selectedShortcutKey.toUpperCase())}</div>
     <div class="shortcut-editor-fields">
       <label><span>执行动作</span><select id="shortcut-action-select"><option value="">选择知识库功能…</option>${options}</select></label>
-      <fieldset><legend>组合键</legend>${['meta', 'alt', 'ctrl', 'shift'].map(modifier => `<label class="shortcut-modifier"><input type="checkbox" value="${modifier}" ${selectedModifiers.includes(modifier) ? 'checked' : ''}><span>${shortcutModifierLabel(modifier)}</span><small>${({ meta: 'Command', alt: 'Option', ctrl: 'Control', shift: 'Shift' })[modifier]}</small></label>`).join('')}</fieldset>
+      <fieldset><legend>组合键</legend>${(SHORTCUT_WINDOWS ? ['alt', 'ctrl', 'shift', ...(selectedModifiers.includes('meta') ? ['meta'] : [])] : ['meta', 'alt', 'ctrl', 'shift']).map(modifier => `<label class="shortcut-modifier"><input type="checkbox" value="${modifier}" ${selectedModifiers.includes(modifier) ? 'checked' : ''}><span>${shortcutModifierLabel(modifier)}</span><small>${SHORTCUT_WINDOWS ? shortcutModifierLabel(modifier) : ({ meta: 'Command', alt: 'Option', ctrl: 'Control', shift: 'Shift' })[modifier]}</small></label>`).join('')}</fieldset>
     </div>
     <div class="shortcut-editor-actions">
       <button type="button" class="shortcut-save-button" onclick="saveShortcutEditor()">保存</button>
@@ -20149,6 +20167,14 @@ function resetShortcutBindings() {
 }
 
 function initKeyboardShortcuts() {
+  if (SHORTCUT_WINDOWS) {
+    const windowsKeys = text => text.replace(/⌥/g, 'Alt + ').replace(/⇧/g, 'Shift + ')
+      .replace(/⌘/g, 'Ctrl + ').replace(/⌃/g, 'Ctrl + ');
+    document.querySelectorAll('#edit-body-modal [title], #body-editor-shortcuts kbd, .body-editor-save-shortcut, .editor-keyboard-glyph').forEach(element => {
+      if (element.hasAttribute('title')) element.title = windowsKeys(element.title);
+      else element.textContent = element.classList.contains('editor-keyboard-glyph') ? 'Ctrl' : windowsKeys(element.textContent);
+    });
+  }
   document.addEventListener('keydown', event => {
     if (window.ApexSearchShortcut?.handle(event, focusCurrentKnowledgeSearch)) cancelPendingOpenPagesCommand();
   }, true);
@@ -23440,6 +23466,17 @@ function isConfiguredOpenPagesCommand(code, location = 0) {
 }
 
 function renderOpenPagesCommandSideSetting() {
+  if (SHORTCUT_WINDOWS) {
+    const overview = Object.entries(loadShortcutBindings()).find(([, binding]) => binding.actionId === 'page_overview');
+    const label = overview ? formatShortcut(overview[1], overview[0]) : '未绑定';
+    const hint = document.querySelector('#open-pages-overview-open-key + span');
+    if (hint) hint.textContent = '呼出';
+    for (const id of ['open-pages-overview-open-key', 'open-pages-overview-close-key']) {
+      const key = document.getElementById(id);
+      if (key) key.textContent = label;
+    }
+    return;
+  }
   const side = getOpenPagesCommandSide();
   document.querySelectorAll('[data-open-pages-command-side]').forEach(button => {
     const active = button.dataset.openPagesCommandSide === side;
@@ -32610,6 +32647,13 @@ async function sendAskQuestion() {
   const originalInput = input.value;
   const question = originalInput.trim();
   if (!question) return;
+
+  if (askContext?.caseHub && (!askContext.kinds?.includes('files') ||
+      askContext.files?.type !== 'case_files' || !(Number(askContext.files.caseId) > 0) ||
+      !askContext.files.paths?.length)) {
+    showToast('请先选择本案文件，再进行案件研究', 'warning');
+    return;
+  }
 
   if (askContext?.caseHub && askContext.exportKnowledgePack) {
     const caseId = Number(askContext.files?.caseId || 0);

@@ -24,13 +24,14 @@ def main():
     parser.add_argument('action', choices=('create', 'verify', 'read'))
     parser.add_argument('link', type=Path)
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
+    parser.add_argument('--stop', action='store_true')
     args = parser.parse_args()
     root = args.root.resolve()
     runtime = Path(os.environ['LOCALAPPDATA']) / 'StellaSource'
-    target = root / '.venv' / 'Scripts' / 'python.exe'
+    target = root / '.venv' / 'Scripts' / 'pythonw.exe'
     arguments = subprocess.list2cmdline([
         str(root / 'scripts' / 'windows' / 'source_server.py'),
-        '--runtime', str(runtime), '--open-browser',
+        '--runtime', str(runtime), '--stop' if args.stop else '--open-browser',
     ])
     shortcut = pythoncom.CoCreateInstance(
         shell.CLSID_ShellLink, None, pythoncom.CLSCTX_INPROC_SERVER, shell.IID_IShellLink,
@@ -41,15 +42,16 @@ def main():
         existing = read_shortcut(shortcut)
         if args.action == 'read':
             print(json.dumps(existing))
-        elif (Path(existing['target']) != target or Path(existing['root']) != root
+        elif (Path(existing['target']) not in (target, target.with_name('python.exe')) or Path(existing['root']) != root
               or existing['arguments'] != arguments):
             parser.exit(1, '桌面快捷方式属于其他安装，请先核对原有入口。\n')
-        return
+        if args.action != 'create':
+            return
     shortcut.SetPath(str(target))
     shortcut.SetArguments(arguments)
     shortcut.SetWorkingDirectory(str(root))
     shortcut.SetIconLocation(str(root / 'windows-installer' / 'src-tauri' / 'icons' / 'icon.ico'), 0)
-    shortcut.SetDescription('Stella 源码工作空间（浏览器）')
+    shortcut.SetDescription('退出 Stella 后台服务' if args.stop else 'Stella 源码工作空间（浏览器）')
     persist.Save(str(args.link), True)
 
 

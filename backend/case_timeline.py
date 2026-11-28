@@ -116,7 +116,7 @@ def review_events(events,updates):
         if not description or ((changed or status in {'amended','excluded'}) and not note):raise HTTPException(422,'修改或排除事件时请填写复核意见')
         if changed and status not in {'amended','excluded'}:raise HTTPException(422,'修改了事件内容，请标记人工修改并填写意见')
         row={**original,**date_bounds(date_text),'date_text':date_text,'description':description,'actors':actors,'review_status':status,'review_note':note}
-        if date_text and not any(date_text in ref['quote'] for ref in row['evidence']):row['date_warning']='人工日期与原始引句不同，请结合复核意见核对。'
+        if date_text and not row.get('manual_unverified') and not any(date_text in ref['quote'] for ref in row['evidence']):row['date_warning']='人工日期与原始引句不同，请结合复核意见核对。'
         output.append(row)
     return ordered(output)
 

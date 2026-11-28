@@ -1385,7 +1385,7 @@
       .table-cases .col-count { width: 52px; }
       .table-cases .col-appeal { width: 68px; }
       .table-cases .col-updated { width: 114px; }
-      .table-cases .col-actions { width: 206px; }
+      .table-cases .col-actions { width: 120px; }
       .table-cases .date-main { white-space: nowrap; }
       .table-cases .actions .btn { flex: none; padding-inline: 7px; }
     }
@@ -10691,3 +10691,8 @@ html.dark-mode .series-workspace-edit-toggle,body.dark-mode .series-workspace-ed
 .case-calculation-table small { display: block; color: var(--muted); }
 .case-calculation-detail .case-timeline-modal-foot > div { flex-wrap: wrap; }
 .case-calculation-detail .case-timeline-modal-foot button { white-space: nowrap; }
+
+/* 案件列表的主要入口 */
+.table-wrap .actions .case-workflows-action { color: #963d37; background: #f8edeb; border: 1px solid #e7c9c5; border-radius: 9px; padding: 7px 12px; font-weight: 600; white-space: nowrap; }
+.table-wrap .actions .case-workflows-action:hover { background: #f1dcd9; }
+.table-wrap .actions .case-workflows-action:focus-visible { outline: 2px solid #963d37; outline-offset: 2px; }

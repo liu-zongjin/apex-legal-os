@@ -1347,7 +1347,8 @@
       ],
       "data_source": [
         "Signed Ed25519 component catalog; HTTPS host allowlist; SHA-256 content index",
-        "LocalAppData/Stella active.json, components and independent userdata"
+        "LocalAppData/Stella active.json, components and independent userdata",
+        "LocalAppData/StellaSource source.lock, stop-request and browser-server.log for the source browser service"
       ],
       "consumers": [
         "backend/main.py",

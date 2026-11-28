@@ -1,5 +1,6 @@
 """One presentation contract shared by previews and timeline delivery documents."""
 import html
+import re
 import textwrap
 from .citation_locations import display_locator
 
@@ -120,3 +121,105 @@ def pdf(events,settings,destination):
             more,filled=story.place(fitz.Rect(36,42,559,800));story.draw(device);writer.end_page()
             if more and fitz.Rect(filled).is_empty:raise ValueError('内容无法分页，请分组导出')
     finally:writer.close()
+
+
+
+def fishbone_pdf(events, sides, destination, include_evidence=True, conflict_ids=()):
+    """Render the workbench's two-sided chronology with paginated source text."""
+    import fitz
+    from .case_timeline import numeric_claims_supported
+    rows, _, _ = presentation(events, {'style':'axis','include_evidence':include_evidence})
+    def unsupported(row):
+        return not row.get('manual_unverified') and bool(row.get('evidence')) and not numeric_claims_supported(row.get('description',''),row['evidence'][0].get('quote',''))
+    def side(row):
+        party=row.get('party') or (row.get('evidence') or [{}])[0].get('party')
+        return sides.get(party,'unknown')
+    groups=[];used=set()
+    for row in rows:
+        if row['id'] in used:continue
+        used.add(row['id']);current=side(row);peer=None
+        if row.get('sort_start') and row.get('sort_start')==row.get('sort_end') and row.get('topic') and current!='unknown':
+            peer=next((other for other in rows if other['id'] not in used and other.get('sort_start')==row['sort_start'] and other.get('sort_end')==row['sort_end'] and other.get('topic')==row['topic'] and side(other) not in ('unknown',current)),None)
+        if peer:used.add(peer['id'])
+        groups.append([row,peer] if peer else [row])
+    font=fitz.Font('china-s');latin=fitz.Font('helv');doc=fitz.open();page=None;y=0
+    def runs(text):
+        return re.findall(r'[\x00-\x7f]+|[^\x00-\x7f]+',text)
+    def text_width(text,size):
+        return sum((latin if ord(part[0])<128 else font).text_length(part,fontsize=size) for part in runs(text))
+    def draw_text(x,baseline,text,size,color):
+        for part in runs(text):
+            ascii_run=ord(part[0])<128
+            page.insert_text((x,baseline),part,fontname='helv' if ascii_run else 'china-s',fontsize=size,color=color)
+            x+=(latin if ascii_run else font).text_length(part,fontsize=size)
+    left_x,right_x,card_width,spine=36,432,374,421
+    def wrap(value,size):
+        result=[]
+        for paragraph in str(value or '').split('\n'):
+            line=''
+            for char in paragraph:
+                if line and text_width(line+char,size)>card_width-24:
+                    result.append(line);line=char
+                else:line+=char
+            result.append(line)
+        return result
+    def lines(row):
+        result=[]
+        def add(text,size,color,step):
+            for line in wrap(text,size):result.append((line,size,color,step))
+        add(row.get('date_text') or '日期不明',16,(.10,.15,.24),25)
+        status={'confirmed':'已确认','amended':'人工修改'}.get(row.get('review_status'),'')
+        if row.get('review_status')=='pending' and (row.get('requires_review') is True or row['id'] in conflict_ids or unsupported(row) or row.get('date_precision')=='unknown'):status='待复核'
+        if status:add(status,9,(.20,.45,.35) if status=='已确认' else (.61,.21,.20),15)
+        if unsupported(row):add('数值与引文不一致',9,(.61,.21,.20),15)
+        elif row['id'] in conflict_ids:add('有关联记录需对照',9,(.61,.21,.20),15)
+        if row.get('actors'):add(row['actors'],10,(.10,.15,.24),16)
+        add(row.get('description'),11,(.10,.15,.24),18)
+        if include_evidence:
+            for ref in row.get('evidence',[]):
+                heading=(ref.get('party') or row.get('party') or '来源待确认')+' · '+(ref.get('document_type') or '案件材料')
+                locator=confirmed_position(ref)
+                add(heading,9,(.36,.43,.54),14)
+                add(ref.get('path','')+(' · '+locator if locator else ''),9,(.36,.43,.54),14)
+                add('“'+ref['quote']+'”' if ref.get('quote') else '手动关联文件，尚未定位原文',9,(.36,.43,.54),14)
+        return result
+    def new_page():
+        nonlocal page,y
+        page=doc.new_page(width=842,height=595);y=105
+        page.insert_text((36,38),'案件事实时间轴',fontname='china-s',fontsize=20,color=(.10,.15,.24))
+        page.insert_text((36,58),'日期保留原文精度；间距不表示时长。',fontname='china-s',fontsize=9,color=(.36,.43,.54))
+        page.insert_text((160,84),'我方材料',fontname='china-s',fontsize=11,color=(.61,.21,.20))
+        page.insert_text((520,84),'对方、其他方及待确认来源',fontname='china-s',fontsize=11,color=(.61,.21,.20))
+        page.draw_line((spine,94),(spine,568),color=(.64,.27,.25),width=2)
+    def take(queue,available):
+        result=[];height=0
+        while queue and height+queue[0][3]<=available:
+            item=queue.pop(0);result.append(item);height+=item[3]
+        return result,height
+    def draw_card(x,entries,height,warning=False):
+        if not entries:return
+        page.draw_rect(fitz.Rect(x,y,x+card_width,y+height+20),color=(.64,.27,.25) if warning else (.84,.86,.89),fill=(.99,.97,.97) if warning else (.99,.99,.99),width=.7)
+        cursor=y+11
+        for text,size,color,step in entries:
+            draw_text(x+12,cursor+size,text,size,color)
+            cursor+=step
+    new_page()
+    for group in groups:
+        left=next((item for item in group if side(item)=='client'),None)
+        right=next((item for item in group if side(item)!='client'),None)
+        left_lines=lines(left) if left else [];right_lines=lines(right) if right else []
+        while left_lines or right_lines:
+            available=550-y-20
+            if available<35:new_page();available=550-y-20
+            lchunk,lh=take(left_lines,available);rchunk,rh=take(right_lines,available)
+            height=max(lh,rh)
+            if not height:raise ValueError('时间轴内容无法分页')
+            draw_card(left_x,lchunk,height,bool(left and (unsupported(left) or left['id'] in conflict_ids)));draw_card(right_x,rchunk,height,bool(right and (unsupported(right) or right['id'] in conflict_ids)))
+            page.draw_circle((spine,y+13),4,color=(.61,.21,.20),fill=(1,1,1),width=2)
+            if lchunk:page.draw_line((left_x+card_width,y+13),(spine-4,y+13),color=(.64,.27,.25),width=1)
+            if rchunk:page.draw_line((spine+4,y+13),(right_x,y+13),color=(.64,.27,.25),width=1)
+            y+=height+34
+            if left_lines or right_lines:new_page()
+    if not groups:page.insert_text((36,120),'没有纳入导出的事件',fontname='china-s',fontsize=11)
+    try:doc.save(str(destination),garbage=3,deflate=True)
+    finally:doc.close()

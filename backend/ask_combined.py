@@ -312,6 +312,9 @@ async def answer_combined(question, model, sources, *, get_db, call_ai, parse_fi
     """Collect every selected source, then answer once with unified citations."""
     from .ai_context import model_budget
     wanted = [name for name in ("knowledge", "fada", "files", "publicweb") if name in sources]
+    if case_hub and ("files" not in wanted or not isinstance(file_scope, dict)
+                     or not file_scope.get('case_id') or not file_scope.get('paths')):
+        raise HTTPException(status_code=422, detail="请先选择本案文件，再进行案件研究")
     if case_mcp_sources:
         wanted.append('case_mcp')
     if not wanted:

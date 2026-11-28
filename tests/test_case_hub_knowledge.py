@@ -49,7 +49,7 @@ class CombinedCaseHubTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(ask_combined, 'file_evidence', AsyncMock(return_value=([], ['没有文字']))), \
              patch.object(ask_combined, 'knowledge_evidence') as knowledge:
             with self.assertRaises(HTTPException) as error:
-                await ask_combined.answer_combined('问题','model',{'files','knowledge'},get_db=lambda:None,call_ai=AsyncMock(),parse_file=None,case_hub=True)
+                await ask_combined.answer_combined('问题','model',{'files','knowledge'},get_db=lambda:None,call_ai=AsyncMock(),parse_file=None,case_hub=True,file_scope={'case_id':1,'paths':['__CASE_ROOT__']})
         self.assertEqual(error.exception.status_code, 422)
         knowledge.assert_not_called()
 
@@ -63,11 +63,18 @@ class CombinedCaseHubTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(ask_combined, 'file_evidence', AsyncMock(return_value=([file_item], []))), \
              patch.object(main, '_national_law_qa_context', national), \
              patch.object(main, 'search_qcc_mcp_laws', failed):
-            result = await ask_combined.answer_combined('问题','model',{'files'},get_db=lambda:None,call_ai=ai,parse_file=None,case_hub=True,case_mcp_sources={'national_law','qcc_law'})
+            result = await ask_combined.answer_combined('问题','model',{'files'},get_db=lambda:None,call_ai=ai,parse_file=None,case_hub=True,case_mcp_sources={'national_law','qcc_law'},file_scope={'case_id':1,'paths':['__CASE_ROOT__']})
         self.assertEqual(national.await_count, 1)
         self.assertEqual(failed.await_count, 1)
         self.assertEqual(result['source_breakdown']['case_mcp'], 1)
         self.assertTrue(any('企查查法律法规检索失败' in warning for warning in result['warnings']))
+
+    async def test_case_hub_rejects_missing_or_non_case_material_before_retrieval(self):
+        for sources, scope in [({'knowledge'}, None), ({'knowledge','files'}, {'session_id':'local','file_ids':['1']}),
+                               ({'files'}, {'case_id':1,'paths':[]})]:
+            with self.subTest(sources=sources, scope=scope), self.assertRaises(HTTPException) as error:
+                await ask_combined.answer_combined('问题','model',sources,get_db=lambda:None,call_ai=AsyncMock(),parse_file=None,case_hub=True,file_scope=scope)
+            self.assertEqual(error.exception.status_code, 422)
 
 class KnowledgePackTests(unittest.IsolatedAsyncioTestCase):
     async def test_export_contains_separate_complete_originals(self):

@@ -345,6 +345,59 @@ class WorkflowTests(unittest.TestCase):
         from backend.case_timeline_document import display_locator
         self.assertIn('未取得原件页码',display_locator('legacy.doc','第 1 段'))
 
+    def test_fishbone_pdf_matches_sides_and_retains_long_source(self):
+        from backend.timeline_presentation import fishbone_pdf
+        common={'review_status':'pending','date_text':'2025年8月19日','date_precision':'day','actors':'甲','topic':'签约','sort_start':'2025-08-19','sort_end':'2025-08-19','requires_review':False}
+        left={**common,'id':'a','party':'原告方','description':'LEFT-EVENT','evidence':[{'path':'原告.docx','locator':'Word 第3段','quote':'LEFT-SOURCE','party':'原告方','document_type':'起诉状'}]}
+        right={**common,'id':'b','party':'被告方','description':'RIGHT-EVENT','evidence':[{'path':'被告.docx','locator':'Word 第8段','quote':'右方原文'*300+'END-SOURCE','party':'被告方','document_type':'答辩状'}]}
+        target=self.folder/'双侧.pdf';fishbone_pdf([left,right],{'原告方':'client','被告方':'other'},target)
+        with fitz.open(target) as document:
+            a=document[0].search_for('LEFT-EVENT')[0];b=document[0].search_for('RIGHT-EVENT')[0]
+            self.assertLess(a.x0,421);self.assertGreater(b.x0,421);self.assertAlmostEqual(a.y0,b.y0,delta=1)
+            self.assertGreater(len(document),1)
+            self.assertIn('END-SOURCE',''.join(page.get_text() for page in document))
+
+    def test_timeline_pdf_export_registers_readable_case_output(self):
+        job=self.done(self.create({'kind':'timeline','paths':['合同.txt']}).json())
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        from backend import download_center as dc
+        store=dc.DownloadStore(self.folder/'downloads')
+        with patch.object(dc,'_store',store):
+            dc.register_download_center_routes(self.app,self.service.get_db)
+            response=self.client.post(prefix+'/timeline-export-pdf',json={'revision':job['revision']})
+            self.assertEqual(response.status_code,200,response.text)
+            identity=response.json()['id'];fields=store.get(identity)
+            target=Path(fields['path']);self.assertEqual(target.parent.name,'时间轴成果')
+            self.assertTrue(target.name.startswith('案件事实时间轴 '));self.assertEqual(fields['case_id'],1)
+            self.assertTrue(fields['case_saved']);self.assertEqual(fields['status'],'completed')
+            with fitz.open(target) as document:self.assertIn('案件事实时间轴',document[0].get_text())
+            listing=self.client.get('/api/download-center/records').json()
+            self.assertTrue(any(item['id']==identity and item['file_available'] for item in listing['items']))
+            self.assertEqual(self.client.get('/api/download-center/records/'+identity+'/file').status_code,200)
+            with patch.object(dc,'run_desktop') as opener:
+                self.assertEqual(self.client.post('/api/download-center/records/'+identity+'/open').status_code,200)
+                self.assertEqual(Path(opener.call_args.args[0][-1]),target.resolve())
+            self.assertEqual(self.client.post(prefix+'/timeline-export-pdf',json={'revision':job['revision']+1}).status_code,409)
+            self.assertEqual(self.client.post(prefix+'/timeline-export-pdf',json={'revision':job['revision'],'filter':'excluded'}).status_code,422)
+            self.assertEqual(len(list(target.parent.iterdir())),1)
+            original=target.read_bytes()
+            second=self.client.post(prefix+'/timeline-export-pdf',json={'revision':job['revision']})
+            self.assertEqual(second.status_code,200,second.text)
+            self.assertNotEqual(second.json()['name'],target.name)
+            self.assertEqual(target.read_bytes(),original)
+            self.assertEqual(len(list(target.parent.iterdir())),2)
+
+    def test_timeline_pdf_export_rejects_symlink_output_directory(self):
+        job=self.done(self.create({'kind':'timeline','paths':['合同.txt']}).json())
+        outside=self.folder/'outside';outside.mkdir()
+        (self.root/'Stella办案成果'/'时间轴成果').symlink_to(outside,target_is_directory=True)
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        with patch('backend.download_center.get_store') as store:
+            response=self.client.post(prefix+'/timeline-export-pdf',json={'revision':job['revision']})
+            self.assertEqual(response.status_code,409,response.text)
+            store.assert_not_called()
+        self.assertEqual(list(outside.iterdir()),[])
+
     def test_timeline_dates_keep_precision_and_reject_guessing(self):
         from backend.case_timeline import date_bounds,grounded_event,issues
         self.assertEqual(date_bounds('2024年2月')['sort_end'],'2024-02-29')
@@ -392,6 +445,24 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.client.put(prefix+'/timeline',json={'revision':1,'events':[update]}).status_code,409)
         (self.root/'事件.txt').write_text('改动后的材料')
         self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':event['id']}).status_code,409)
+
+    def test_manual_timeline_event_links_unanalysed_case_file(self):
+        (self.root/'补充.txt').write_text('这是尚未分析的材料。',encoding='utf-8')
+        job=self.done(self.create({'kind':'timeline','paths':['合同.txt']}).json())
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        updates=[{'id':row['id'],'status':row['review_status'],'note':row['review_note']} for row in job['timeline_events']]
+        manual={'path':'补充.txt','date_text':'2026年9月1日','actors':'甲','description':'支付10元','party':'原告方'}
+        result=self.client.put(prefix+'/timeline',json={'revision':job['revision'],'events':updates,'manual_events':[manual]})
+        self.assertEqual(result.status_code,200,result.text)
+        saved=result.json();row=next(row for row in saved['timeline_events'] if row.get('manual_unverified'))
+        self.assertEqual(row['evidence'][0]['path'],'补充.txt')
+        self.assertEqual(row['evidence'][0]['quote'],'')
+        self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':row['id']}).status_code,200)
+        self.assertNotIn('补充.txt',[source['path'] for source in saved['sources']])
+        (self.root/'补充.txt').write_text('材料已变更',encoding='utf-8')
+        self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':row['id']}).status_code,409)
+        updates=[{'id':item['id'],'status':item['review_status'],'note':item['review_note']} for item in saved['timeline_events']]
+        self.assertEqual(self.client.put(prefix+'/timeline',json={'revision':saved['revision'],'events':updates}).status_code,409)
 
     def test_timeline_reference_document_and_changed_source_during_export(self):
         from unittest.mock import patch

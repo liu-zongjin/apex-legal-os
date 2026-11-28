@@ -74,6 +74,9 @@ try {
         $link = Join-Path $desktop 'Stella Source (Browser).lnk'
         & $venvPython (Join-Path $PSScriptRoot 'source_browser_shortcut.py') create $link
         if ($LASTEXITCODE -ne 0) { throw '无法创建浏览器快捷方式，请检查上方错误。' }
+        $stopLink = Join-Path $desktop '退出 Stella.lnk'
+        & $venvPython (Join-Path $PSScriptRoot 'source_browser_shortcut.py') create $stopLink --stop
+        if ($LASTEXITCODE -ne 0) { throw '无法创建退出快捷方式，请检查上方错误。' }
         Write-Host "桌面快捷方式：$link"
         if (-not $NoLaunch) { Invoke-Item -LiteralPath $link }
     }

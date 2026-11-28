@@ -51,6 +51,7 @@ jobs:
           }
           function Test-BrowserShortcut {
             $shortcut = Get-BrowserShortcut
+            if ((Split-Path -Leaf $shortcut.target) -ne 'pythonw.exe') { throw 'Browser shortcut should not open a console' }
             $out = Join-Path $env:RUNNER_TEMP 'stella-browser.out'
             $err = Join-Path $env:RUNNER_TEMP 'stella-browser.err'
             $process = Start-Process -FilePath $shortcut.target -ArgumentList $shortcut.arguments -WorkingDirectory $shortcut.root -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
@@ -65,13 +66,17 @@ jobs:
                 } catch {}
               }
               if (-not $ready) { throw 'The shortcut did not start Stella' }
-              if (-not (Select-String -LiteralPath $out -Pattern 'http://127.0.0.1:18865/' -SimpleMatch)) { throw 'Browser handoff was not reached' }
               if (-not (Test-Path (Join-Path $runtime 'legal_kb.db'))) { throw 'Database not initialized' }
               $arguments = $shortcut.arguments -replace ' --open-browser$', ''
               $duplicate = Start-Process -FilePath $shortcut.target -ArgumentList $arguments -WorkingDirectory $shortcut.root -Wait -PassThru
               if ($duplicate.ExitCode -eq 0) { throw 'Concurrent session was accepted' }
               $reopen = Start-Process -FilePath $shortcut.target -ArgumentList $shortcut.arguments -WorkingDirectory $shortcut.root -Wait -PassThru
               if ($reopen.ExitCode -ne 0) { throw 'Second shortcut activation did not reopen the running workspace' }
+              $stopLink = Join-Path $desktop '退出 Stella.lnk'
+              $stop = & .venv/Scripts/python.exe scripts/windows/source_browser_shortcut.py read $stopLink --stop | ConvertFrom-Json
+              Start-Process -FilePath $stop.target -ArgumentList $stop.arguments -WorkingDirectory $stop.root -Wait
+              if (-not $process.WaitForExit(30000)) { throw 'Stop shortcut did not shut down Stella' }
+              if ($process.ExitCode -ne 0) { throw 'Stella did not shut down cleanly' }
             } finally {
               Get-Content $out,$err -ErrorAction SilentlyContinue
               if (-not $process.HasExited) { taskkill /PID $process.Id /T /F }

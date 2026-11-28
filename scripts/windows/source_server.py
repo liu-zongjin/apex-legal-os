@@ -11,6 +11,7 @@ import sys
 import time
 import uuid
 import webbrowser
+import traceback
 
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +26,7 @@ def source_revision():
         result = subprocess.check_output(
             ['git', 'status', '--porcelain=v2', '--branch', '--untracked-files=normal'],
             cwd=ROOT, stderr=subprocess.DEVNULL, timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
         )
         revision = None
         for line in result.splitlines():
@@ -72,7 +74,7 @@ def prepare_runtime(path, port, revision=None):
 
 def open_workspace(port):
     url = f'http://127.0.0.1:{port}/'
-    print(f'Stella 已就绪。若浏览器没有打开，请访问 {url} 。在服务窗口按 Ctrl+C 可退出。', flush=True)
+    print(f'Stella 已就绪。若浏览器没有打开，请访问 {url} 。可使用桌面的“退出 Stella”快捷方式停止后台服务。', flush=True)
     try:
         webbrowser.open(url)
     except (OSError, webbrowser.Error):
@@ -113,9 +115,19 @@ def serve(runtime, port, open_browser, listener):
         async def startup(self, sockets=None):
             await super().startup(sockets=sockets)
             if self.started:
+                asyncio.create_task(self.watch_stop_request())
                 mark_source_ready(runtime, revision)
                 if open_browser:
                     await asyncio.get_running_loop().run_in_executor(None, open_workspace, port)
+
+        async def watch_stop_request(self):
+            request = runtime / 'stop-request'
+            while not self.should_exit:
+                if request.exists():
+                    request.unlink(missing_ok=True)
+                    self.should_exit = True
+                    return
+                await asyncio.sleep(0.5)
 
     server = Server(uvicorn.Config('backend.main:app', host='127.0.0.1', port=port, workers=1))
     try:
@@ -130,12 +142,18 @@ def main():
     parser.add_argument('--runtime', type=Path, required=True)
     parser.add_argument('--port', type=int, default=18865)
     parser.add_argument('--open-browser', action='store_true')
+    parser.add_argument('--stop', action='store_true')
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error('port must be between 1 and 65535')
     runtime = args.runtime.resolve()
+    if args.stop:
+        if is_running_workspace(runtime, args.port):
+            (runtime / 'stop-request').touch()
+        return 0
     try:
         with exclusive_lock(runtime / 'source.lock'), socket.socket() as listener:
+            (runtime / 'stop-request').unlink(missing_ok=True)
             if os.name != 'nt':
                 listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
@@ -144,12 +162,33 @@ def main():
                 raise InstallError(f'无法使用本机端口 {args.port}。请确认是否已有 Stella 或其他应用在运行。') from exc
             return serve(runtime, args.port, args.open_browser, listener)
     except InstallError as exc:
-        if os.name == 'nt' and args.open_browser and is_running_workspace(runtime, args.port):
-            open_workspace(args.port)
-            return 0
+        if os.name == 'nt' and args.open_browser:
+            # A second click can arrive while the first process is still importing
+            # dependencies and has not begun listening yet.
+            for _ in range(60):
+                if is_running_workspace(runtime, args.port):
+                    open_workspace(args.port)
+                    return 0
+                time.sleep(0.5)
         print(exc, file=sys.stderr)
         return 1
 
 
 if __name__ == '__main__':
+    if os.name == 'nt' and sys.stdout is None:
+        runtime_index = sys.argv.index('--runtime') if '--runtime' in sys.argv else -1
+        log_dir = Path(sys.argv[runtime_index + 1]) if runtime_index >= 0 else Path(os.environ['LOCALAPPDATA']) / 'StellaSource'
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log = open(log_dir / 'browser-server.log', 'a', encoding='utf-8', buffering=1)
+        sys.stdout = sys.stderr = log
+        try:
+            result = main()
+            if result and '--open-browser' in sys.argv:
+                raise RuntimeError('启动未完成，请查看日志。')
+        except Exception:
+            traceback.print_exc()
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, f'Stella 启动失败，请查看日志：\n{log.name}', 'Stella', 0x10)
+            result = 1
+        sys.exit(result)
     sys.exit(main())

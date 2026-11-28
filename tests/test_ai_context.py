@@ -43,6 +43,19 @@ class ContextTests(unittest.IsolatedAsyncioTestCase):
     def prepare(self,key,mid,question,enabled=True,cid=None):
         return ctx.prepare(self.db,key,mid,question,'fixture-model',enabled,cid)
 
+    async def test_combined_case_folder_is_saved_and_checked_as_case_scope(self):
+        key = 'ask_history_combined_case'
+        context = {'type':'combined', 'caseHub':True, 'kinds':['knowledge','files'],
+                   'files':{'type':'case_files', 'caseId':901, 'paths':['__CASE_ROOT__']}}
+        record = {'id':'combined-question', 'role':'user', 'content':'工程争议', 'ts':self.clock}
+        self.main.save_ai_ask_history(self.main.AIAskHistoryPayload(history_key=key, context=context, records=[record]))
+        self.assertEqual(self.prepare(key, record['id'], record['content'], cid=901)['case_id'], 901)
+        with self.assertRaises(HTTPException) as mismatch:
+            self.prepare(key, record['id'], record['content'], cid=902)
+        self.assertEqual(mismatch.exception.status_code, 409)
+        self.assertEqual(ctx.case_scope({**context, 'kinds':['knowledge']}), 0)
+        self.assertEqual(ctx.case_scope(context, [{'caseLink':{'caseId':902}}]), -1)
+
     async def test_filing_conversation_preserves_scope_history_and_message_links(self):
         for key, scope in [
             ('ask_history_filing_enhance', None),
