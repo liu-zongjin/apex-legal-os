@@ -321,7 +321,15 @@ def run(output):
                 page.locator('#saveTimeline').wait_for(state='attached');page.locator('.timeline-delivery > summary').click()
                 assert page.locator('[data-time-event]').count()==3
                 page.locator('.case-actions').hover();page.locator('#topTimelineAdd').click()
+                frame.locator('.file-row').filter(has_text='01_合同.pdf').click()
+                notice=page.locator('#timelineDuplicateNotice')
+                notice.wait_for()
+                assert '已分析过' in notice.inner_text() and '01_合同.pdf' in notice.inner_text()
                 frame.locator('.file-row').filter(has_text='03_草稿.txt').click()
+                notice.wait_for(state="hidden")
+                box=page.locator('.work-grid').bounding_box();picker=page.locator('#filePicker').bounding_box();submit=page.locator('#submit').bounding_box()
+                assert picker['width']>box['width']*.9 and submit['x']>box['x']+box['width']*.6
+                assert submit['y']>picker['y']+picker['height']
                 frame.locator('#archiveAssignBtn').click()
                 page.locator('#sources').get_by_text('03_草稿.txt').wait_for()
                 page.locator('#sources details > summary').click()

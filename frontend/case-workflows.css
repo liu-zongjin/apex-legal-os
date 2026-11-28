@@ -280,3 +280,14 @@ summary:focus-visible{outline:2px solid var(--apex-accent);outline-offset:3px}
 .timeline-fused .timeline-rail{top:calc(var(--workflow-context-offset,100px) + 37px);transition:top .18s ease}
 @media(max-width:600px){.timeline-fused .timeline-rail{top:auto}}
 @media(prefers-reduced-motion:reduce){.timeline-fused .timeline-rail{transition:none}}
+
+/* A single full-width materials workspace for timeline additions. */
+.timeline-mode #inputStage[open] .work-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:0;padding:20px;background:var(--apex-surface-solid);border:1px solid var(--apex-border-subtle);border-radius:var(--apex-radius-lg)}
+.timeline-mode #inputStage[open] .work-grid>.panel{padding:0;margin:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+.timeline-mode #inputStage[open] .materials>#materialsHint,.timeline-mode #inputStage[open] .form-heading,.timeline-mode #inputStage[open] .analysis-section-heading,.timeline-mode #inputStage[open] #analysisDisclosure{display:none}
+.timeline-mode #inputStage[open] .materials h2{margin:0 0 12px}
+.timeline-mode #inputStage[open] .form{min-height:0}
+.timeline-mode #inputStage[open] .analysis-actions{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:12px;padding:14px 0 0}
+.timeline-mode #inputStage[open] .analysis-actions .consent{margin:0;flex:1 1 260px}
+.timeline-mode #inputStage[open] #submit{margin-left:auto;align-self:center}
+.timeline-duplicate-notice{margin:0 0 12px;padding:9px 12px;border-radius:var(--apex-radius-md);background:color-mix(in srgb,var(--apex-accent) 8%,var(--apex-surface-solid));color:var(--apex-accent);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
