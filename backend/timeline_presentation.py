@@ -130,7 +130,7 @@ def fishbone_pdf(events, sides, destination, include_evidence=True, conflict_ids
     from .case_timeline import numeric_claims_supported
     rows, _, _ = presentation(events, {'style':'axis','include_evidence':include_evidence})
     def unsupported(row):
-        return not row.get('manual_unverified') and bool(row.get('evidence')) and not numeric_claims_supported(row.get('description',''),row['evidence'][0].get('quote',''))
+        return bool(row.get('evidence')) and not (row.get('manual_unverified') and not row['evidence'][0].get('quote')) and not numeric_claims_supported(row.get('description',''),row['evidence'][0].get('quote',''))
     def side(row):
         party=row.get('party') or (row.get('evidence') or [{}])[0].get('party')
         return sides.get(party,'unknown')
@@ -181,7 +181,7 @@ def fishbone_pdf(events, sides, destination, include_evidence=True, conflict_ids
                 locator=confirmed_position(ref)
                 add(heading,9,(.36,.43,.54),14)
                 add(ref.get('path','')+(' · '+locator if locator else ''),9,(.36,.43,.54),14)
-                add('“'+ref['quote']+'”' if ref.get('quote') else '手动关联文件，尚未定位原文',9,(.36,.43,.54),14)
+                add('“'+ref['quote']+'”' if ref.get('quote') else ('手动关联文件夹，请自行核对材料' if ref.get('source_kind') == 'case_folder' else '手动关联文件，尚未定位原文'),9,(.36,.43,.54),14)
         return result
     def new_page():
         nonlocal page,y

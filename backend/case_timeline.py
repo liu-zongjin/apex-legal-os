@@ -153,6 +153,8 @@ def artifacts(job,folder):
     wb.save(folder/'事实经过表.xlsx')
     write_document(events,folder/'事实经过表.docx',REVIEW,settings)
     (folder/'事实经过.md').write_text('\n\n'.join(lines),encoding='utf-8')
-    (folder/'时间轴核验底稿.json').write_text(json.dumps({key:job.get(key) for key in ('case_id','revision','sources','timeline_events','timeline_issues','timeline_coverage','claims','results','export_options')},ensure_ascii=False,indent=2),encoding='utf-8')
+    from .case_workflows import public_job
+    audit = public_job(job)
+    (folder/'时间轴核验底稿.json').write_text(json.dumps({key:audit.get(key) for key in ('case_id','revision','sources','timeline_events','timeline_issues','timeline_coverage','claims','results','export_options')},ensure_ascii=False,indent=2),encoding='utf-8')
     (folder/'事实时间轴.svg').write_text(svg(events,settings),encoding='utf-8')
     pdf(events,settings,folder/'事实时间轴.pdf')

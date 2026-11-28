@@ -464,6 +464,95 @@ class WorkflowTests(unittest.TestCase):
         updates=[{'id':item['id'],'status':item['review_status'],'note':item['review_note']} for item in saved['timeline_events']]
         self.assertEqual(self.client.put(prefix+'/timeline',json={'revision':saved['revision'],'events':updates}).status_code,409)
 
+    def test_manual_event_case_folder_and_optional_verified_quote(self):
+        folder = self.root/'子文件夹'
+        folder.mkdir()
+        (folder/'资料.txt').write_text('甲于2026年1月1日支付100元。',encoding='utf-8')
+        job=self.done(self.create({'kind':'timeline','paths':['合同.txt']}).json())
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        def updates(rows):
+            return [{'id':row['id'],'status':row['review_status'],'note':row['review_note']} for row in rows]
+        proposal={'path':'子文件夹','date_text':'2026年1月1日','description':'关联文件夹','party':'原告方'}
+        self.assertEqual(self.client.put(prefix+'/timeline',json={'revision':job['revision'],'events':updates(job['timeline_events']),'manual_events':[{**proposal,'quote':'不存在的引句'}]}).status_code,422)
+        result=self.client.put(prefix+'/timeline',json={'revision':job['revision'],'events':updates(job['timeline_events']),'manual_events':[proposal]})
+        self.assertEqual(result.status_code,200,result.text)
+        saved=result.json(); row=next(row for row in saved['timeline_events'] if row['description']=='关联文件夹')
+        self.assertEqual(row['evidence'][0]['source_kind'],'case_folder')
+        with patch('backend.matter_local_links.local'), patch('backend.platform_files.has_opener',return_value=True), patch('backend.platform_files.run') as opener:
+            self.assertEqual(self.client.post(prefix+'/timeline-open',json={'event_id':row['id']}).status_code,200)
+            self.assertEqual(opener.call_args.args[0],['open',str(folder.resolve())])
+        (folder/'另一个文件.txt').write_text('新增内容',encoding='utf-8')
+        proposal={'path':'子文件夹/资料.txt','date_text':'2026年1月1日','description':'支付100元','party':'被告方','quote':'甲于2026年1月1日支付100元。'}
+        result=self.client.put(prefix+'/timeline',json={'revision':saved['revision'],'events':updates(saved['timeline_events']),'manual_events':[proposal]})
+        self.assertEqual(result.status_code,200,result.text)
+        saved=result.json();row=next(row for row in saved['timeline_events'] if row['description']=='支付100元')
+        self.assertEqual(row['evidence'][0]['quote'],proposal['quote'])
+        self.assertEqual(row['evidence'][0]['source_kind'],'case_file')
+        self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':row['id']}).status_code,200)
+        bad={**proposal,'quote':'材料中不存在这个句子'}
+        self.assertEqual(self.client.put(prefix+'/timeline',json={'revision':saved['revision'],'events':updates(saved['timeline_events']),'manual_events':[bad]}).status_code,422)
+        self.assertEqual(self.client.get(prefix).json()['revision'],saved['revision'])
+        outside=self.folder/'outside';outside.mkdir()
+        (self.root/'链接').symlink_to(outside,target_is_directory=True)
+        self.assertNotEqual(self.client.put(prefix+'/timeline',json={'revision':saved['revision'],'events':updates(saved['timeline_events']),'manual_events':[{**proposal,'path':'链接','quote':''}]}).status_code,200)
+
+    def test_manual_event_native_picker_is_scoped_and_external_path_hidden(self):
+        from subprocess import CompletedProcess
+        external=self.folder/'外部材料.txt'
+        external.write_text('2026年2月1日支付50元。',encoding='utf-8')
+        job=self.done(self.create({'kind':'timeline','paths':['合同.txt']}).json())
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        updates=[{'id':row['id'],'status':row['review_status'],'note':row['review_note']} for row in job['timeline_events']]
+        proposal={'native_token':'0'*32,'date_text':'2026年2月1日','description':'支付50元','quote':'2026年2月1日支付50元。'}
+        with patch('backend.platform_files.has_picker',return_value=True), patch('backend.platform_files.run',return_value=CompletedProcess([],0,str(external)+'\n','')):
+            self.assertEqual(self.client.post(prefix+'/timeline-select-file').status_code,403)
+            with patch('backend.matter_local_links.local'):
+                picked=self.client.post(prefix+'/timeline-select-file')
+                self.assertEqual(picked.status_code,200,picked.text)
+                proposal['native_token']=picked.json()['token']
+                wrong=prefix.replace('/cases/1/','/cases/2/')
+                self.assertNotEqual(self.client.put(wrong+'/timeline',json={'revision':job['revision'],'events':updates,'manual_events':[proposal]}).status_code,200)
+                response=self.client.put(prefix+'/timeline',json={'revision':job['revision'],'events':updates,'manual_events':[proposal]})
+                self.assertEqual(response.status_code,200,response.text)
+                saved=response.json();row=next(row for row in saved['timeline_events'] if row['description']=='支付50元')
+                ref=row['evidence'][0]
+                self.assertEqual(ref['source_kind'],'external_file');self.assertEqual(ref['quote'],proposal['quote'])
+                self.assertNotIn('external_path',ref)
+                self.assertNotIn(str(external),json.dumps(self.client.get(prefix).json(),ensure_ascii=False))
+                self.assertNotIn(str(external),json.dumps(self.client.get('/api/case-workflows/cases/1/tasks').json(),ensure_ascii=False))
+                audit=next(item for item in saved['artifacts'] if item['name']=='时间轴核验底稿.json')
+                self.assertNotIn(str(external),(self.service.directory(self.root,job['id'])/audit['path']).read_text(encoding='utf-8'))
+                self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':row['id']}).content,external.read_bytes())
+                with patch('backend.platform_files.has_opener',return_value=True), patch('backend.platform_files.run') as opener:
+                    self.assertEqual(self.client.post(prefix+'/timeline-open',json={'event_id':row['id']}).status_code,200)
+                    self.assertEqual(opener.call_args.args[0],['open',str(external.resolve())])
+            self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':row['id']}).status_code,403)
+            external.write_text('文件已变化',encoding='utf-8')
+            with patch('backend.matter_local_links.local'):
+                self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':row['id']}).status_code,409)
+                updates=[{'id':item['id'],'status':'excluded' if item['id']==row['id'] else item['review_status'],'note':'移除已变化的材料' if item['id']==row['id'] else item['review_note']} for item in saved['timeline_events']]
+                removed=self.client.put(prefix+'/timeline',json={'revision':saved['revision'],'events':updates})
+                self.assertEqual(removed.status_code,200,removed.text)
+
+    def test_external_pdf_preview_is_bound_to_event_and_local(self):
+        from subprocess import CompletedProcess
+        external=self.folder/'外部证据.pdf';pdf(external)
+        job=self.done(self.create({'kind':'timeline','paths':['合同.txt']}).json())
+        prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
+        updates=[{'id':row['id'],'status':row['review_status'],'note':row['review_note']} for row in job['timeline_events']]
+        with patch('backend.platform_files.has_picker',return_value=True), patch('backend.platform_files.run',return_value=CompletedProcess([],0,str(external)+'\n','')), patch('backend.matter_local_links.local'):
+            token=self.client.post(prefix+'/timeline-select-file').json()['token']
+            response=self.client.put(prefix+'/timeline',json={'revision':job['revision'],'events':updates,'manual_events':[{'native_token':token,'description':'用户添加的事件'}]})
+            self.assertEqual(response.status_code,200,response.text)
+            row=next(row for row in response.json()['timeline_events'] if row['description']=='用户添加的事件')
+            query={'path':row['evidence'][0]['path'],'event_id':row['id']}
+            preview=self.client.get(prefix+'/material-preview',params=query)
+            self.assertEqual(preview.status_code,200,preview.text)
+            page=self.client.get(prefix+'/material-page',params=query)
+            self.assertEqual(page.status_code,200,page.text)
+            self.assertEqual(page.headers['content-type'],'image/png')
+        self.assertEqual(self.client.get(prefix+'/material-page',params=query).status_code,403)
+
     def test_timeline_reference_document_and_changed_source_during_export(self):
         from unittest.mock import patch
         from backend.case_timeline import artifacts
@@ -500,14 +589,16 @@ class WorkflowTests(unittest.TestCase):
             return grounded_event({'source_id':source['id'],'quote':source['text'],'date_text':date,'actors':'甲','description':description,'topic':'付款'},sources)
         rows=[event(sources[0],'甲支付20000元','2025年8月19日'),event(sources[1],'甲支付30000元','2025年8月20日'),event(sources[2],'甲支付20000元','2025年8月19日')]
         fabricated={**rows[0],'id':'fabricated','description':'甲支付10元'}
-        job={'timeline_events':rows+[fabricated],'timeline_coverage':{},'model':'fixture'}
+        external={**rows[0],'id':'external-manual','origin':'manual','evidence':[{**rows[0]['evidence'][0],'path':'本机文件/补充.txt'}]}
+        unquoted={**rows[0],'id':'unquoted-manual','origin':'manual','description':'手工记录','evidence':[{**rows[0]['evidence'][0],'path':'补充目录','quote':''}]}
+        job={'timeline_events':rows+[fabricated,external,unquoted],'timeline_coverage':{},'model':'fixture'}
         requests=[]
         async def compare(model,messages):
             requests.append(json.loads(messages[-1]['content']))
             return json.dumps({'conflicts':[]}), '', model
         with patch.object(self.service,'event'),patch.object(self.service,'call_ai',side_effect=compare):
             asyncio.run(self.service.compare_timeline_sources(self.root,job,sources))
-        self.assertNotIn('fabricated',[row['id'] for row in requests[0]['events']])
+        self.assertTrue({'fabricated','external-manual','unquoted-manual'}.isdisjoint({row['id'] for row in requests[0]['events']}))
         document=next(item for item in requests[0]['documents'] if item['path']=='a.txt')
         self.assertIn('支付20000元',document['text'])
         self.assertIn('支付30000元',document['text'])

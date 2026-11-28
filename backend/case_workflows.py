@@ -70,6 +70,19 @@ def plain(value, limit=1000):
     return value.strip()
 
 
+def public_job(job):
+    """Never expose absolute paths of manually linked external files in job APIs."""
+    if not job or job.get('kind') != 'timeline':
+        return job
+    result = dict(job)
+    result['timeline_events'] = [
+        {**row, 'evidence': [{k: v for k, v in ref.items() if k != 'external_path'}
+                             for ref in row.get('evidence', [])]}
+        for row in job.get('timeline_events', [])
+    ]
+    return result
+
+
 def claims_from_draft(text):
     # Preserve every sentence, rather than selecting only convenient claims.
     parts = [p.strip() for p in re.split(r'(?<=[。！？!?；;])|\n+', text) if p.strip()]
@@ -134,6 +147,7 @@ class CaseWorkflowService:
         self.article_repository = article_repository or ArticleRepository(get_db)
         self.jobs = {}
         self.pending = {}
+        self.manual_selections = {}
         self.lock = threading.RLock()
         self.creation_lock = threading.Lock()
         self.build_lock = threading.Lock()
@@ -233,6 +247,51 @@ class CaseWorkflowService:
         if expected and sha != expected:
             raise HTTPException(409, f'材料已变化，请创建新任务：{relative}')
         return resolved, {'path': relative.as_posix(), 'sha256': sha}
+
+    def manual_case_source(self, root, path, expected=None):
+        """A user may bind a case file or folder without analyzing its contents."""
+        normalized = str(path).replace('\\', '/')
+        resolved = _resolve_inside(root, normalized, allow_root=False)
+        relative = resolved.relative_to(root)
+        cursor = root
+        for part in Path(normalized).parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                raise HTTPException(409, '不能关联符号链接材料')
+        if relative.parts[0] == OUTPUT_DIR or not (resolved.is_file() or resolved.is_dir()):
+            raise HTTPException(422, '请选择案件原始文件或文件夹')
+        kind = 'case_folder' if resolved.is_dir() else 'case_file'
+        sha = '' if kind == 'case_folder' else digest(resolved)
+        if expected is not None and expected != sha:
+            raise HTTPException(409, '关联的文件已变化，请重新选择')
+        return resolved, {'path': relative.as_posix(), 'sha256': sha, 'source_kind': kind}
+
+    def manual_external_source(self, path, expected=None):
+        try:
+            candidate = Path(path)
+            if not candidate.is_absolute() or candidate.is_symlink():
+                raise ValueError()
+            resolved = candidate.resolve(strict=True)
+            if not resolved.is_file():
+                raise ValueError()
+            sha = digest(resolved)
+        except (OSError, RuntimeError, ValueError, TypeError):
+            raise HTTPException(409, '关联的本机文件不可用，请重新选择')
+        if expected is not None and expected != sha:
+            raise HTTPException(409, '关联的本机文件已变化，请重新选择')
+        return resolved, {'path': '本机文件/' + resolved.name, 'external_path': str(resolved),
+                          'sha256': sha, 'source_kind': 'external_file'}
+
+    def reference_source(self, root, ref):
+        kind = ref.get('source_kind')
+        if kind == 'external_file':
+            return self.manual_external_source(ref.get('external_path'), ref.get('sha256'))[0]
+        if kind in ('case_file', 'case_folder'):
+            path, item = self.manual_case_source(root, ref['path'], ref.get('sha256'))
+            if item['source_kind'] != kind:
+                raise HTTPException(409, '关联材料类型已变化，请重新选择')
+            return path
+        return self.source(root, ref['path'], ref['sha256'])[0]
 
     def input_path(self, root, job, item):
         """Read a hash-verified private copy; legacy tasks retain live-file checks."""
@@ -803,7 +862,19 @@ class CaseWorkflowService:
         """Compare distinct source accounts; AI conflicts are review candidates only."""
         from .case_timeline import numeric_claims_supported
         job['timeline_conflicts']=[]
-        active = [row for row in job['timeline_events'] if row.get('review_status') != 'excluded' and row.get('evidence') and numeric_claims_supported(row.get('description',''),row['evidence'][0].get('quote',''))]
+        def comparable(row):
+            if row.get('review_status') == 'excluded' or not row.get('evidence'):
+                return False
+            ref = row['evidence'][0]
+            quote = ref.get('quote', '')
+            if not quote or not numeric_claims_supported(row.get('description', ''), quote):
+                return False
+            # A manual link is not an analyzed document. Do not let an absent
+            # document suppress comparison of the other, fully read sources.
+            if row.get('origin') == 'manual':
+                return any(source.get('path') == ref.get('path') and quote in source.get('text', '') for source in sources)
+            return True
+        active = [row for row in job['timeline_events'] if comparable(row)]
         if len({ref.get('path') for row in active for ref in row.get('evidence', [])}) < 2:
             return
         limited = active[:100]
@@ -1143,7 +1214,8 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks')
     def tasks(case_id: int):
-        return service.list(case_id)
+        result = service.list(case_id)
+        return {'items': [public_job(job) for job in result['items']]}
 
     @app.post('/api/case-workflows/cases/{case_id}/tasks')
     async def create(case_id: int, request: Request):
@@ -1159,7 +1231,7 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
             return service.create(case_id, body)
         root, job = await _run_in_thread(create_checked)
         service.launch(root, job)
-        return job
+        return public_job(job)
 
     @app.post('/api/case-workflows/cases/{case_id}/timeline-classify')
     async def classify_timeline_sources(case_id: int, request: Request):
@@ -1249,11 +1321,11 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                         continue
             return locations
         locations = await _run_in_thread(word_locations) if job and job.get('status') == 'completed' else {}
-        return {'job':job, 'scan':scan, 'created':created, 'party_sides':sides, 'word_locations':locations}
+        return {'job':public_job(job), 'scan':scan, 'created':created, 'party_sides':sides, 'word_locations':locations}
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}')
     def detail(case_id: int, job_id: str):
-        return service.load(case_id, job_id)[1]
+        return public_job(service.load(case_id, job_id)[1])
 
     @app.post('/api/case-workflows/cases/{case_id}/tasks/{job_id}/cancel')
     async def cancel(case_id: int, job_id: str, request: Request):
@@ -1271,7 +1343,7 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
             except asyncio.CancelledError:
                 job['status'] = 'cancelled'
                 service.event(root, job, '任务已停止；可继续办理。')
-        return service.load(case_id, job_id)[1]
+        return public_job(service.load(case_id, job_id)[1])
 
     @app.post('/api/case-workflows/cases/{case_id}/tasks/{job_id}/resume')
     async def resume(case_id: int, job_id: str, request: Request):
@@ -1282,7 +1354,7 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         for item in job['sources'] + ([job['draft_source']] if job.get('draft_source') else []):
             await _run_in_thread(service.source, root, item['path'], item['sha256'])
         service.launch(root, job)
-        return job
+        return public_job(job)
 
     @app.put('/api/case-workflows/cases/{case_id}/tasks/{job_id}/review')
     async def review(case_id: int, job_id: str, request: Request):
@@ -1329,7 +1401,38 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                     shutil.rmtree(folder, ignore_errors=True)
                     raise
             return job
-        return await _run_in_thread(save_review)
+        return public_job(await _run_in_thread(save_review))
+
+    @app.post('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-select-file')
+    async def timeline_select_file(case_id: int, job_id: str, request: Request):
+        require_action(request)
+        from .matter_local_links import local
+        from .platform_files import has_picker, run as run_desktop
+        local(request)
+        _, job = service.load(case_id, job_id)
+        if job['kind'] != 'timeline' or job['status'] != 'completed':
+            raise HTTPException(409, '请先打开已完成的时间轴')
+        if not has_picker():
+            raise HTTPException(501, '当前系统不支持选择本机文件')
+        try:
+            result = await _run_in_thread(run_desktop, ['osascript', '-e',
+                'POSIX path of (choose file with prompt "选择事件关联的本机文件")'],
+                capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            raise HTTPException(408, '选择超时，请重试')
+        if result.returncode:
+            if '-128' in (result.stderr or ''):
+                return {'cancelled': True}
+            raise HTTPException(500, '无法打开文件选择器，请重试')
+        path, ref = await _run_in_thread(service.manual_external_source, result.stdout.rstrip('\r\n'))
+        token = uuid.uuid4().hex
+        with service.lock:
+            now = time.monotonic()
+            service.manual_selections = {key: value for key, value in service.manual_selections.items() if value['expires'] > now}
+            if len(service.manual_selections) >= 100:
+                service.manual_selections.pop(min(service.manual_selections, key=lambda key: service.manual_selections[key]['expires']))
+            service.manual_selections[token] = {'case_id': case_id, 'job_id': job_id, 'ref': ref, 'expires': now + 1200}
+        return {'token': token, 'name': path.name, 'path': str(path)}
 
     @app.put('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline')
     async def save_timeline(case_id: int,job_id: str,request: Request):
@@ -1337,6 +1440,49 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         body=await request.json()
         if not isinstance(body,dict):raise HTTPException(422,'时间轴参数无效')
         from .case_timeline import review_events,artifacts,grounded_event,date_bounds,MAX_EVENTS
+        manual = body.get('manual_events', [])
+        if not isinstance(manual, list) or len(manual) > MAX_EVENTS:
+            raise HTTPException(422, '事件最多300项')
+        prepared = {}
+        for index, proposal in enumerate(manual):
+            if not isinstance(proposal, dict) or not (proposal.get('path') or proposal.get('native_token')):
+                continue  # Keep the legacy, quoted-fragment API compatible.
+            if proposal.get('native_token'):
+                from .matter_local_links import local
+                local(request)
+                if not isinstance(proposal['native_token'], str) or not re.fullmatch(r'[a-f0-9]{32}', proposal['native_token']):
+                    raise HTTPException(422, '本机文件选择无效，请重新选择')
+                with service.lock:
+                    selection = service.manual_selections.get(proposal['native_token'])
+                    if not selection or selection['expires'] <= time.monotonic() or (selection['case_id'], selection['job_id']) != (case_id, job_id):
+                        raise HTTPException(409, '本机文件选择已失效，请重新选择')
+                    ref = dict(selection['ref'])
+                source = await _run_in_thread(service.reference_source, service.root(case_id), ref)
+            else:
+                source, ref = await _run_in_thread(service.manual_case_source, service.root(case_id), proposal['path'])
+            quote = plain(proposal.get('quote', ''), 1200)
+            locator = '已关联文件夹' if ref['source_kind'] == 'case_folder' else '用户关联文件，尚未定位原文'
+            chunk_index = 0
+            if quote:
+                if ref['source_kind'] == 'case_folder':
+                    raise HTTPException(422, '关联文件夹时，请选择具体文件后再填写原文引句')
+                if len(quote) < 4:
+                    raise HTTPException(422, '原文引句请至少填写4个字')
+                if source.stat().st_size > 100 * 1024 * 1024:
+                    raise HTTPException(413, '文件超过100 MB，无法核对引句；可留空引句直接关联文件')
+                try:
+                    parsed = await service.parse(source, False)
+                except Exception as error:
+                    raise HTTPException(422, '无法读取文件文字，请检查文件或留空引句') from error
+                if parsed.get('needs_ocr'):
+                    raise HTTPException(422, '文件文字无法直接读取，请留空引句并打开原件核对')
+                text = _plain_text(str(parsed.get('content') or ''))
+                if quote not in text:
+                    raise HTTPException(422, '引句未在所选文件的提取文字中找到，请检查或留空')
+                pieces = _located_chunks(text)
+                match = next(((i, loc) for i, (chunk, loc) in enumerate(pieces) if quote in chunk), None)
+                chunk_index, locator = match if match else (0, '引句已匹配，具体位置待确认')
+            prepared[index] = (ref, quote, locator, chunk_index)
         def save_review():
             with service.lock:
                 root,job=service.load(case_id,job_id)
@@ -1353,16 +1499,19 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                 cache=service.directory(root,job_id)/'parsed-sources.json'
                 if digest(cache)!=job['parsed_sha256']:raise HTTPException(409,'解析底稿已变化')
                 fragments=json.loads(cache.read_text(encoding='utf-8'))['sources']
-                for proposal in manual:
-                    if isinstance(proposal,dict) and proposal.get('path'):
-                        _,item=service.source(root,proposal['path'])
+                for index, proposal in enumerate(manual):
+                    if index in prepared:
+                        item, quote, locator, chunk_index = prepared[index]
+                        service.reference_source(root, item)
                         description=plain(proposal.get('description',''),1200)
                         date_text=plain(proposal.get('date_text',''),100)
                         actors=plain(proposal.get('actors',''),300)
                         party=plain(proposal.get('party','待确认'),100) or '待确认'
                         if not description:raise HTTPException(422,'请填写事件内容')
-                        ref={'id':uuid.uuid4().hex,'path':item['path'],'sha256':item['sha256'],'locator':'用户关联文件，尚未定位原文','chunk_index':0,'party':party,'document_type':'案件材料','vision':False,'quote':''}
+                        ref={**item,'id':uuid.uuid4().hex,'locator':locator,'chunk_index':chunk_index,'party':party,'document_type':'案件材料','vision':False,'quote':quote}
                         row={'id':uuid.uuid4().hex[:24],'description':description,'actors':actors,'date_text':date_text,'topic':'','category':'其他','party':party,'document_type':'案件材料',**date_bounds(date_text),'evidence':[ref],'review_status':'amended','review_note':'用户手动添加并关联文件','requires_review':False,'original':{'date_text':date_text,'description':description,'actors':actors},'manual_unverified':True}
+                        if date_text and quote and date_text not in quote:
+                            row['date_warning']='填写的日期未出现在所附引句中，请核对原件。'
                     else:
                         row=grounded_event(proposal,fragments)
                     if not row:raise HTTPException(422,'补录事件必须有本任务材料的逐字引句')
@@ -1375,8 +1524,8 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                     if job['claims']:service.fact_artifacts(job,folder)
                     artifacts(job,folder)
                     for event in job['timeline_events']:
-                        if event.get('manual_unverified'):
-                            for ref in event['evidence']:service.source(root,ref['path'],ref['sha256'])
+                        if event.get('manual_unverified') and event.get('review_status') != 'excluded':
+                            for ref in event['evidence']:service.reference_source(root,ref)
                     for source in job['sources']+([job['draft_source']] if job.get('draft_source') else []):
                         service.source(root,source['path'],source['sha256'])
                     if service.root(case_id)!=root:raise HTTPException(409,'案件文件夹绑定已变化')
@@ -1386,7 +1535,7 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                 except Exception:
                     shutil.rmtree(folder,ignore_errors=True);raise
                 return job
-        return await _run_in_thread(save_review)
+        return public_job(await _run_in_thread(save_review))
 
     @app.post('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-export-pdf')
     async def export_timeline_pdf(case_id: int, job_id: str, request: Request):
@@ -1403,8 +1552,8 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                     raise HTTPException(409,'请先载入当前已保存的时间轴')
                 for source in job['sources']+([job['draft_source']] if job.get('draft_source') else []):service.source(root,source['path'],source['sha256'])
                 for event in job['timeline_events']:
-                    if event.get('manual_unverified'):
-                        for ref in event['evidence']:service.source(root,ref['path'],ref['sha256'])
+                    if event.get('manual_unverified') and event.get('review_status') != 'excluded':
+                        for ref in event['evidence']:service.reference_source(root,ref)
                 base=service.directory(root,create=True)
                 scope=body.get('filter','all');party=body.get('party','');category=body.get('category','')
                 if scope not in ('all','unknown','pending') or not isinstance(party,str) or len(party)>100 or not isinstance(category,str) or len(category)>100:
@@ -1458,13 +1607,17 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         return Response(svg(ordered(job['timeline_events']),settings,preview=True),media_type='image/svg+xml',headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; sandbox"})
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-source')
-    def timeline_source(case_id: int,job_id: str,event_id: str):
+    def timeline_source(case_id: int,job_id: str,event_id: str,request: Request):
         root,job=service.load(case_id,job_id)
         if job['kind']!='timeline':raise HTTPException(404,'时间轴不存在')
         row=next((row for row in job['timeline_events'] if row['id']==event_id),None)
         if not row:raise HTTPException(404,'事件不存在')
         ref=row['evidence'][0]
-        source,_=service.source(root,ref['path'],ref['sha256'])
+        if ref.get('source_kind') == 'external_file':
+            from .matter_local_links import local
+            local(request)
+        source=service.reference_source(root,ref)
+        if source.is_dir():raise HTTPException(422,'请使用打开关联文件夹')
         return FileResponse(source,filename=source.name,headers={'Cache-Control':'no-store'})
 
     @app.post('/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-open')
@@ -1476,7 +1629,10 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         row=next((row for row in job.get('timeline_events',[]) if row['id']==body.get('event_id')),None)
         if job['kind']!='timeline' or not row: raise HTTPException(404,'事件不存在')
         ref=row['evidence'][0]
-        source,_=service.source(root,ref['path'],ref['sha256'])
+        if ref.get('source_kind') in ('external_file', 'case_folder'):
+            from .matter_local_links import local
+            local(request)
+        source=service.reference_source(root,ref)
         from .platform_files import run,has_opener
         if not has_opener(): raise HTTPException(501,'当前系统不支持打开原件')
         await _run_in_thread(lambda:run(['open',str(source)],check=True,timeout=15))
@@ -1528,16 +1684,23 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
                 return job
         return await _run_in_thread(save_draft)
 
-    def material_pdf(case_id,job_id,path):
+    def material_pdf(case_id,job_id,path,event_id='',request=None):
         import fitz
         root,job=service.load(case_id,job_id)
-        item=next((item for item in job['sources'] if item['path']==path),None)
+        event=next((row for row in job.get('timeline_events',[]) if row.get('id')==event_id),None) if event_id else None
+        event_ref=next((ref for ref in (event or {}).get('evidence',[]) if ref.get('path')==path),None) if event else None
+        item=event_ref if event_ref and event_ref.get('source_kind') else next((item for item in job['sources'] if item['path']==path),None)
+        if not item: item=event_ref
         if not item:
             item=next((ref for row in job.get('timeline_events',[]) if row.get('manual_unverified') for ref in row.get('evidence',[]) if ref.get('path')==path),None)
         if not item:
             raise HTTPException(404,'材料不属于本次任务')
-        service.source(root,item['path'],item['sha256'])
-        original=service.input_path(root,job,item)
+        if item.get('source_kind') == 'external_file':
+            from .matter_local_links import local
+            if request is None: raise HTTPException(403, '请在本机打开文件')
+            local(request)
+        original=service.reference_source(root,item) if item.get('source_kind') else service.input_path(root,job,item)
+        if not item.get('source_kind'): service.source(root,item['path'],item['sha256'])
         if original.suffix.lower()=='.pdf':
             result=original
         else:
@@ -1584,27 +1747,32 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         return {'path':path,'pages':count,'page_basis':'Word转换后PDF页码' if Path(path).suffix.lower() in {'.doc','.docx'} else '原件物理页码'}
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-preview')
-    def material_preview(case_id: int,job_id: str,path: str,page: int = 1, event_id: str = ''):
+    def material_preview(case_id: int,job_id: str,path: str,request: Request,page: int = 1, event_id: str = ''):
         from urllib.parse import quote
         try:
             # A paragraph-anchored Word citation must open at that paragraph,
             # not at an arbitrary first page of a converted copy.
             if event_id and Path(path).suffix.lower() == '.docx':
                 raise RuntimeError('使用 Word 段落定位')
-            _,count=material_pdf(case_id,job_id,path)
+            _,count=material_pdf(case_id,job_id,path,event_id,request)
         except (RuntimeError, OSError, subprocess.TimeoutExpired) as error:
             if Path(path).suffix.lower() != '.docx':
                 raise HTTPException(422, str(error))
             from docx import Document
             from html import escape
             root,job=service.load(case_id,job_id)
-            item=next((item for item in job['sources'] if item['path']==path),None)
+            event=next((row for row in job.get('timeline_events',[]) if row.get('id')==event_id),None)
+            event_ref=next((ref for ref in (event or {}).get('evidence',[]) if ref.get('path')==path),None) if event else None
+            item=event_ref if event_ref and event_ref.get('source_kind') else next((item for item in job['sources'] if item['path']==path),None)
+            if not item: item=event_ref
             if not item:
                 item=next((ref for row in job.get('timeline_events',[]) if row.get('manual_unverified') for ref in row.get('evidence',[]) if ref.get('path')==path),None)
             if not item: raise HTTPException(404,'材料不属于本次任务')
-            service.source(root,item['path'],item['sha256'])
-            original=service.input_path(root,job,item)
-            event=next((row for row in job.get('timeline_events',[]) if row.get('id')==event_id),None)
+            if item.get('source_kind') == 'external_file':
+                from .matter_local_links import local
+                local(request)
+            original=service.reference_source(root,item) if item.get('source_kind') else service.input_path(root,job,item)
+            if not item.get('source_kind'): service.source(root,item['path'],item['sha256'])
             ref=event['evidence'][0] if event and event.get('evidence') and event['evidence'][0]['path']==path else {}
             cited=str(ref.get('quote') or '')
             paragraphs=[p.text for p in Document(original).paragraphs]
@@ -1619,15 +1787,15 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
             return HTMLResponse('<!doctype html><meta charset="utf-8"><style>body{max-width:760px;margin:30px auto;padding:0 24px;font:16px/1.8 sans-serif}small{color:#667}p{white-space:pre-wrap}.match{background:#fff1bc}</style>'+body+'<script>document.querySelector(".match")?.scrollIntoView({block:"center"})</script>',headers={'Cache-Control':'no-store'})
         if not 1 <= page <= count:
             raise HTTPException(422,'预览页码超出范围')
-        url=f'/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-page?path={quote(path,safe="")}'
+        url=f'/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-page?path={quote(path,safe="")}&event_id={quote(event_id,safe="")}'
         html=(frontend_dir/'case-workflow-preview.html').read_text(encoding='utf-8')
         return HTMLResponse(html.replace('__PAGE_CONFIG__',json.dumps({'url':url,'count':count,'page':page})),headers={'Cache-Control':'no-store'})
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}/material-page')
-    def material_page(case_id: int,job_id: str,path: str,page: int = 1):
+    def material_page(case_id: int,job_id: str,path: str,request: Request,page: int = 1,event_id: str = ''):
         import fitz
         from fastapi.responses import Response
-        pdf,count=material_pdf(case_id,job_id,path)
+        pdf,count=material_pdf(case_id,job_id,path,event_id,request)
         if not 1 <= page <= count:
             raise HTTPException(422,'预览页码超出范围')
         with fitz.open(pdf) as document:
