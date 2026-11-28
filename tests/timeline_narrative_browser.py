@@ -46,20 +46,40 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    assert popup['y'] >= nav['y']+nav['height']-12
    page.locator('.timeline-rail h2').click()
    assert page.locator('.timeline-tools').get_attribute('open') is None
+   page.locator('[data-time-event]').last.click()
+   page.wait_for_function("document.body.classList.contains('timeline-fused')")
+   editor=page.locator('.timeline-editor');assert editor.is_visible()
+   fused=page.locator('.case-fused-legend').bounding_box();panel=editor.bounding_box()
+   assert panel['y']>=fused['y']+fused['height'], (fused,panel)
+   row=editor.locator('.timeline-review-row').first
+   assert row.locator('input').bounding_box()['x']>row.locator('span').first.bounding_box()['x']
+   editor.locator('[data-time-field=review_note]').fill('暂存的复核意见')
+   page.mouse.click(5,450)
+   assert editor.is_hidden()
+   page.locator('[data-time-event]').last.click()
+   assert editor.locator('[data-time-field=review_note]').input_value()=='暂存的复核意见'
+   editor.locator('[data-time-field=review_note]').fill('')
+   page.locator('#closeTimelineReview').click()
    page.evaluate('window.scrollTo(0,0)')
    page.wait_for_function("!document.body.classList.contains('timeline-fused')")
-   assert '到日' not in page.locator('.timeline-list').inner_text()
+   assert '具体日期' not in page.locator('.timeline-list').inner_text()
+   assert page.locator('.timeline-event .timeline-badge').count()>0
    page.locator('.timeline-workbench').evaluate("el => el.classList.add('timeline-animate')")
    assert page.locator('.timeline-pair').first.evaluate("el => parseFloat(getComputedStyle(el).animationDuration)") >= .6
    page.locator('.timeline-workbench').evaluate("el => el.classList.remove('timeline-animate')")
    page.set_viewport_size({'width':1440,'height':900})
    page.screenshot(path=str(p/'timeline-desktop.png'))
    page.locator('[data-time-event]').first.click();assert page.locator('.timeline-editor').is_visible()
-   page.locator('[data-time-source]').first.click();page.frame_locator('#sourcePreview').locator('#page').wait_for();page.keyboard.press('Escape')
+   page.locator('.timeline-editor [data-time-source]').first.click();page.frame_locator('#sourcePreview').locator('#page').wait_for();page.keyboard.press('Escape')
    page.locator('#closeTimelineReview').click();page.locator('#refresh').click();assert page.locator('[data-time-category]').first.is_visible()
    page.locator('[data-time-party="原告方"]').click();assert page.locator('.timeline-entry').count()==1
    page.set_viewport_size({'width':390,'height':844});page.locator('#refresh').click() if page.locator('.timeline-tools').get_attribute('open') is not None else None
    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+   page.locator('[data-time-event]').first.click()
+   editor=page.locator('.timeline-editor');assert editor.is_visible()
+   box=editor.bounding_box();bar=page.locator('.case-bar').bounding_box()
+   assert box['x']>=0 and box['x']+box['width']<=390 and box['y']>=bar['y']+bar['height'], (box,bar)
+   page.locator('#closeTimelineReview').click()
    page.screenshot(path=str(p/'timeline-mobile.png'))
    page.set_viewport_size({'width':1440,'height':500})
    page.evaluate('''() => {

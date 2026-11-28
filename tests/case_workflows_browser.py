@@ -253,6 +253,7 @@ def run(output):
                 page.locator('[data-time-status="confirmed"]').click()
                 page.locator('#saveTimelineReview').click()
                 page.get_by_text('当前成果版本：2',exact=False).wait_for()
+                assert page.locator('.timeline-badge.status-confirmed').first.inner_text()=='已确认'
                 page.locator('[data-time-field="date_text"]').fill('2026年1月2日')
                 page.locator('[data-time-field="review_note"]').fill('匿名复核：日期修订测试')
                 page.locator('#saveTimelineReview').click()
