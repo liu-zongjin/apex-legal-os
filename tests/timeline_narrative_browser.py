@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    assert page.locator('.timeline-entry').first.bounding_box()['y']<600
    assert page.locator('.timeline-editor').is_hidden()
    assert page.locator('.timeline-mini [data-mini-target]').count()==2
-   assert page.locator('.case-bar .segmented').bounding_box()['x'] < page.locator('#caseSearch').bounding_box()['x']
+   assert page.locator('.case-bar .segmented[aria-label=办理事项]').bounding_box()['x'] < page.locator('#caseSearch').bounding_box()['x']
    page.set_viewport_size({'width':1440,'height':500})
    page.locator('.timeline-mini [data-mini-target]').last.click()
    page.wait_for_function("document.querySelector('.timeline-mini [data-mini-target]:last-child').getAttribute('aria-current')==='true'")
@@ -36,9 +36,9 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    page.screenshot(path=str(p/'timeline-desktop.png'))
    page.locator('[data-time-event]').first.click();assert page.locator('.timeline-editor').is_visible()
    page.locator('[data-time-source]').first.click();page.frame_locator('#sourcePreview').locator('#page').wait_for();page.keyboard.press('Escape')
-   page.locator('#closeTimelineReview').click();page.locator('.timeline-tools > summary').click();assert page.locator('[data-time-category]').first.is_visible()
+   page.locator('#closeTimelineReview').click();page.locator('.case-actions').hover();page.locator('.timeline-tools > summary').click();assert page.locator('[data-time-category]').first.is_visible()
    page.locator('[data-time-party="原告方"]').click();assert page.locator('.timeline-entry').count()==1
-   page.set_viewport_size({'width':390,'height':844});page.locator('.timeline-tools > summary').click() if page.locator('.timeline-tools').get_attribute('open') is not None else None
+   page.set_viewport_size({'width':390,'height':844});page.locator('.case-actions').hover();page.locator('.timeline-tools > summary').click() if page.locator('.timeline-tools').get_attribute('open') is not None else None
    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
    page.screenshot(path=str(p/'timeline-mobile.png'))
    page.set_viewport_size({'width':1440,'height':500})

@@ -12,6 +12,13 @@ MAX_EVENTS=300
 REVIEW={'pending':'待复核','confirmed':'已确认','amended':'人工修改','excluded':'不纳入时间轴'}
 CATEGORIES={'诉讼程序','合同订立','履行付款','交付验收','沟通通知','财产处置','其他'}
 
+def numeric_claims_supported(description, quote):
+    """Reject changed numeric facts; exact numeric tokens prevent 10 matching 10000."""
+    def numbers(text):
+        text=re.sub(r'(?<=\d)[,，](?=\d{3}(?:\D|$))','',str(text))
+        return set(re.findall(r'(?<![\d.])\d+(?:\.\d+)?(?![\d.])',text))
+    return numbers(description) <= numbers(quote)
+
 
 def date_bounds(value):
     """Bounds only support sorting; displayed text retains source precision."""
@@ -49,6 +56,8 @@ def grounded_event(proposal,sources):
         return None  # Never publish an event without a literal, case-scoped citation.
     description=plain(proposal.get('description',''),1200)
     if not description:raise HTTPException(422,'AI未填写事件内容')
+    if not numeric_claims_supported(description, quote):
+        return None
     date_text=plain(proposal.get('date_text',''),100)
     warning=''
     if date_text and date_text not in quote:
@@ -65,7 +74,7 @@ def grounded_event(proposal,sources):
     return {'id':identifier,'description':description,'actors':actors,'date_text':date_text,
             'topic':plain(proposal.get('topic',''),200), 'category':proposal.get('category') if isinstance(proposal.get('category'),str) and proposal.get('category') in CATEGORIES else '其他', 'party':ref['party'], 'document_type':ref['document_type'], **date_bounds(date_text),
             'date_warning':warning or date_bounds(date_text)['date_warning'],
-            'evidence':[ref],'review_status':'pending','review_note':'','original':{'date_text':date_text,'description':description,'actors':actors}}
+            'evidence':[ref],'review_status':'pending','review_note':'', 'requires_review':proposal.get('requires_review') is not False or ref['vision'], 'original':{'date_text':date_text,'description':description,'actors':actors}}
 
 
 def ordered(events):

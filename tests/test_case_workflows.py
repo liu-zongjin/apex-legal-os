@@ -359,6 +359,11 @@ class WorkflowTests(unittest.TestCase):
         first=grounded_event(proposal,[source]);second=grounded_event({**proposal,'description':'付款'},[source])
         self.assertNotEqual(first['id'],second['id'])  # Distinct actions in the same quote cannot be lost.
         self.assertIsNone(grounded_event({**proposal,'quote':'原文没有这一句'},[source]))
+        amount_source={**source,'text':'甲于2026年9月1日签约，支付10000元。'}
+        amount={**proposal,'quote':amount_source['text'],'date_text':'2026年9月1日','description':'甲支付10元'}
+        self.assertIsNone(grounded_event(amount,[amount_source]))
+        self.assertIsNotNone(grounded_event({**amount,'description':'甲支付10000元','requires_review':False},[amount_source]))
+        self.assertFalse(grounded_event({**amount,'description':'甲支付10000元','requires_review':False},[amount_source])['requires_review'])
 
     def test_timeline_material_only_review_manual_add_versions_and_source_changes(self):
         (self.root/'事件.txt').write_text('甲于2026年1月1日签订合同。\n甲于2026年2月支付价款。')
@@ -369,6 +374,10 @@ class WorkflowTests(unittest.TestCase):
         prefix=f'/api/case-workflows/cases/1/tasks/{job["id"]}'
         event=job['timeline_events'][0]
         self.assertEqual(self.client.get(prefix+'/timeline-source',params={'event_id':event['id']}).status_code,200)
+        from unittest.mock import patch
+        with patch('backend.platform_files.has_opener',return_value=True), patch('backend.platform_files.run') as opener:
+            self.assertEqual(self.client.post(prefix+'/timeline-open',json={'event_id':event['id']}).status_code,200)
+            self.assertEqual(opener.call_args.args[0],['open',str((self.root/'事件.txt').resolve())])
         self.assertEqual(self.client.get(prefix.replace('/cases/1/','/cases/2/')+'/timeline-fragments').status_code,404)
         update={'id':event['id'],'date_text':'2026年1月1日','actors':'甲','description':event['description'],'status':'confirmed','note':''}
         self.assertEqual(self.client.put(prefix+'/timeline',json={'revision':1,'events':[update]}).status_code,422)

@@ -148,6 +148,8 @@ class AutoTimelineTests(unittest.TestCase):
         path='被告方材料/新增证据.txt'
         classification=self.client.post('/api/case-workflows/cases/1/timeline-classify',json={'paths':[path]})
         self.assertEqual(classification.json()['items'][0]['party'],'被告方')
+        folder=self.client.post('/api/case-workflows/cases/1/timeline-classify',json={'paths':['被告方材料']})
+        self.assertEqual([row['path'] for row in folder.json()['items']],[path])
         unnamed=self.root/'补充材料.docx';document=Document();document.add_paragraph('甲公司提交的补充材料');document.save(unnamed)
         identified=self.client.post('/api/case-workflows/cases/1/timeline-classify',json={'paths':[unnamed.name]})
         self.assertEqual(identified.json()['items'][0]['party'],'原告方')

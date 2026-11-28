@@ -2282,6 +2282,11 @@
       "source": "backend/case_workflows.py"
     },
     {
+      "method": "POST",
+      "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-open",
+      "source": "backend/case_workflows.py"
+    },
+    {
       "method": "GET",
       "path": "/api/case-workflows/cases/{case_id}/tasks/{job_id}/timeline-preview",
       "source": "backend/case_workflows.py"
@@ -2299,6 +2304,11 @@
     {
       "method": "POST",
       "path": "/api/case-workflows/cases/{case_id}/timeline-classify",
+      "source": "backend/case_workflows.py"
+    },
+    {
+      "method": "GET",
+      "path": "/api/case-workflows/timeline-model-capability",
       "source": "backend/case_workflows.py"
     },
     {

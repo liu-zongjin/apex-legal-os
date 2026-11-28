@@ -230,7 +230,7 @@ def run(output):
                 page.locator('#chooseTimelineEvidence').click()
                 page.locator('#submit').click()
                 page.locator('#saveTimeline').wait_for(state='attached',timeout=20000)
-                page.locator('.timeline-tools > summary').click()
+                page.locator('.case-actions').hover();page.locator('.timeline-tools > summary').click()
                 page.locator('.timeline-delivery > summary').click()
                 assert page.locator('[data-time-event]').count()==2
                 assert page.locator('.timeline-entry.has-conflict').count()==2
@@ -239,7 +239,7 @@ def run(output):
                 page.locator('[data-time-category="*"]').click()
                 assert page.locator('[data-time-event]').count()==2
                 assert page.locator('.timeline-event-quote').first.text_content()
-                page.locator('.timeline-tools > summary').click()
+                page.locator('.case-actions').hover();page.locator('.timeline-tools > summary').click()
                 page.locator('[data-time-event]').first.click()
                 page.locator('[data-time-status="confirmed"]').click()
                 page.locator('#saveTimelineReview').click()
@@ -253,9 +253,9 @@ def run(output):
                 page.keyboard.press('Escape')
                 page.locator('[data-time-field="description"]').fill('未保存修改')
                 page.locator('#closeTimelineReview').click()
-                page.locator('.timeline-tools > summary').click()
+                page.locator('.case-actions').hover();page.locator('.timeline-tools > summary').click()
                 page.locator('#restoreTimeline').click()
-                page.locator('.timeline-tools > summary').click()
+                page.locator('.case-actions').hover();page.locator('.timeline-tools > summary').click()
                 page.wait_for_function("document.querySelector('[data-time-field=description]').value !== '未保存修改'")
                 page.locator('details:has(#loadTimeFragments) > summary').click()
                 page.locator('#loadTimeFragments').click()
@@ -311,7 +311,7 @@ def run(output):
                 page.locator('#tasks [data-job]').first.click()
                 page.locator('#saveTimeline').wait_for(state='attached');page.locator('.timeline-delivery > summary').click()
                 assert page.locator('[data-time-event]').count()==3
-                page.locator('#addTimelineMaterials').click()
+                page.locator('.case-actions').hover();page.locator('#topTimelineAdd').click()
                 frame.locator('.file-row').filter(has_text='03_草稿.txt').click()
                 frame.locator('#archiveAssignBtn').click()
                 page.locator('#sources').get_by_text('03_草稿.txt').wait_for()
@@ -323,7 +323,7 @@ def run(output):
                 page.wait_for_function("document.querySelectorAll('[data-time-event]').length===4")
                 page.locator('[data-time-select]').first.check()
                 page.locator('[data-time-select]').nth(1).check()
-                page.locator('.timeline-tools > summary').click()
+                page.locator('.case-actions').hover();page.locator('.timeline-tools > summary').click()
                 page.locator('#removeTimelineSelected').click()
                 page.wait_for_function("document.querySelectorAll('[data-time-event]').length===2")
                 page.locator('[data-time-filter="excluded"]').click()
