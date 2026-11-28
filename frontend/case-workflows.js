@@ -285,6 +285,10 @@
     if(job.status!=='completed')return `<p class="note">已保留${(job.timeline_events||[]).length}项事件检查点；提取完成后可复核和导出。</p>`;
     const events=job.timeline_events||[];if(!events.some(row=>row.id===timelineSelection))timelineSelection=events[0]?.id||'';
     let selected=events.find(row=>row.id===timelineSelection);
+    const numberTokens=value=>new Set((String(value||'').replace(/(?<=\d)[,，](?=\d{3}(?:\D|$))/g,'').match(/\d+(?:\.\d+)?/g)||[]));
+    const unsupportedNumbers=row=>{const origin=numberTokens(row.evidence?.[0]?.quote);return [...numberTokens(row.description)].some(value=>!origin.has(value));};
+    const reliableIds=new Set(events.filter(row=>row.review_status!=='excluded'&&!unsupportedNumbers(row)).map(row=>row.id));
+    const safeIssues=(job.timeline_issues||[]).filter(issue=>issue.type!=='date_difference').map(issue=>({...issue,event_ids:(issue.event_ids||[]).filter(id=>reliableIds.has(id))})).filter(issue=>issue.event_ids.length>=2);
     const filters={all:'全部事件',unknown:'日期不确定',pending:'待复核',excluded:'已排除'};
     const visible=events.filter(row=>(timelineFilter==='all'?row.review_status!=='excluded':timelineFilter==='unknown'?row.date_precision==='unknown'&&row.review_status!=='excluded':row.review_status===timelineFilter) && (!timelineParty||(row.party||row.evidence?.[0]?.party||'待确认')===timelineParty) && (!timelineCategory||(row.category||'其他')===timelineCategory));
     const parties=[...new Set(events.map(row=>row.party||row.evidence?.[0]?.party||'待确认'))];
@@ -295,11 +299,9 @@
       <div class="timeline-facet" role="group" aria-label="按材料方筛选"><span>来源方</span><button class="button small" type="button" data-time-party="*" aria-pressed="${!timelineParty}">全部</button>${parties.map(party=>`<button class="button small" type="button" data-time-party="${esc(party)}" aria-pressed="${timelineParty===party}">${esc(party)}</button>`).join('')}</div>
       <div class="timeline-facet" role="group" aria-label="按事件类型筛选"><span>事件类型</span><button class="button small" type="button" data-time-category="*" aria-pressed="${!timelineCategory}">全部</button>${categories.map(category=>`<button class="button small" type="button" data-time-category="${esc(category)}" aria-pressed="${timelineCategory===category}">${esc(category)}</button>`).join('')}</div>
       <div class="timeline-bulk"><span>已选择 ${timelineSelected.size} 项</span><button id="removeTimelineSelected" class="button small" type="button" ${timelineSelected.size?'':'disabled'}>删除所选事件</button></div>
-      ${(job.timeline_issues||[]).map(issue=>`<p class="timeline-warning">${esc(issue.label)} · ${issue.event_ids.length}条记录（仅为待核对候选）</p>`).join('')}`;
-    const numberTokens=value=>new Set((String(value||'').replace(/(?<=\d)[,，](?=\d{3}(?:\D|$))/g,'').match(/\d+(?:\.\d+)?/g)||[]));
-    const unsupportedNumbers=row=>{const origin=numberTokens(row.evidence?.[0]?.quote);return [...numberTokens(row.description)].some(value=>!origin.has(value));};
-    const conflicts=new Set((job.timeline_issues||[]).filter(issue=>['date_difference','possible_conflict'].includes(issue.type)).flatMap(issue=>issue.event_ids||[]));
-    const conflictIssues=row=>(job.timeline_issues||[]).filter(issue=>['date_difference','possible_conflict'].includes(issue.type)&&(issue.event_ids||[]).includes(row.id));
+      ${safeIssues.map(issue=>`<p class="timeline-warning">${esc(issue.label)} · ${issue.event_ids.length}条记录（仅为待核对候选）</p>`).join('')}`;
+    const conflicts=new Set(safeIssues.filter(issue=>issue.type==='possible_conflict').flatMap(issue=>issue.event_ids));
+    const conflictIssues=row=>safeIssues.filter(issue=>issue.type==='possible_conflict'&&issue.event_ids.includes(row.id));
     const conflictDetail=row=>{const items=conflictIssues(row);if(!items.length)return '';return `<details class="timeline-comparison"><summary>查看需要对照的记录</summary>${items.map(issue=>{const peers=(issue.event_ids||[]).filter(id=>id!==row.id).map(id=>events.find(event=>event.id===id)).filter(event=>event&&event.review_status!=='excluded');const explanation=issue.type==='date_difference'?'系统将下列记录归为相同事项和主体，但日期不同；也可能是不同时间发生的独立事件，请结合内容与原文判断。':(issue.label||'不同材料的记载可能不一致，请对照原文判断。');return `<div class="timeline-comparison-group"><p>${esc(explanation)}</p>${peers.map(peer=>`<div class="timeline-comparison-peer"><strong>${esc(peer.date_text||'日期不明')} · ${esc(peer.party||peer.evidence?.[0]?.party||'来源待确认')}</strong><span>${esc(peer.description)}</span><small>${esc(peer.evidence?.[0]?.path||'来源待确认')} · ${esc(state.timelineLocations?.[peer.id]||sourceLocation(peer.evidence?.[0]||{}))}</small>${peer.evidence?.length?`<button type="button" class="button small" data-time-source="${esc(peer.id)}">查看这条记录的原文</button>`:''}</div>`).join('')||'<p>关联记录当前不可用，请刷新记录后重试。</p>'}</div>`;}).join('')}<p class="timeline-comparison-note">这只是待核对的线索，不能单凭日期不同认定事实冲突。单条事件“已确认”与关联记录是否存在差异是两项独立状态。</p></details>`;};
     if(!visible.some(row=>row.id===timelineSelection)){timelineSelection=visible[0]?.id||'';selected=visible[0];}
     const grouped=[];const used=new Set();

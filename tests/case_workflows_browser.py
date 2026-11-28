@@ -236,7 +236,7 @@ def run(output):
                 assert page.locator('.timeline-entry.has-conflict').count()==2
                 comparison=page.locator('.timeline-comparison').first
                 comparison.locator('summary').click()
-                assert '日期不同' in comparison.inner_text()
+                assert '匿名测试：不同文件对同一付款事项的说法待核对' in comparison.inner_text()
                 assert comparison.locator('.timeline-comparison-peer').count()>=1
                 comparison.locator('[data-time-source]').first.click()
                 assert page.locator('#preview').is_visible()

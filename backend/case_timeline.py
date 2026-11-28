@@ -91,8 +91,9 @@ def issues(events):
     for rows in groups.values():
         if len(rows)<2:continue
         bounds={(row['sort_start'],row['sort_end']) for row in rows if row['sort_start']}
-        result.append({'type':'date_difference' if len(bounds)>1 else 'possible_duplicate',
-            'label':'同一事项候选存在日期差异，需核对是否实际为不同事件' if len(bounds)>1 else '可能重复的事件，保留各份材料的记录',
+        if len(bounds)>1:continue  # A broad topic and actor cannot identify a single occurrence.
+        result.append({'type':'possible_duplicate',
+            'label':'可能重复的事件，保留各份材料的记录',
             'event_ids':[row['id'] for row in rows]})
     return result
 
@@ -125,7 +126,7 @@ def artifacts(job,folder):
     from openpyxl.styles import Alignment
     from .case_timeline_document import write_document
     from .timeline_presentation import presentation,svg,pdf,confirmed_position
-    events=ordered(job['timeline_events']);active={row['id'] for row in events if row['review_status']!='excluded'}
+    events=ordered(job['timeline_events']);active={row['id'] for row in events if row['review_status']!='excluded' and row.get('evidence') and numeric_claims_supported(row.get('description',''),row['evidence'][0].get('quote',''))}
     conflicts=[{**item,'event_ids':[event_id for event_id in item.get('event_ids',[]) if event_id in active]}
                for item in job.get('timeline_conflicts',[])]
     job['timeline_issues']=issues(events)+[item for item in conflicts if len(item['event_ids']) >= 2]

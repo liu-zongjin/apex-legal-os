@@ -414,11 +414,33 @@ class WorkflowTests(unittest.TestCase):
         from backend.case_timeline import grounded_event,issues,review_events
         sources=[{'id':str(i),'path':f'{i}.txt','sha256':'h','locator':'第1段','chunk_index':0,'text':f'甲于2026年1月{i}日签约。'} for i in [1,2]]
         events=[grounded_event({'source_id':source['id'],'quote':source['text'],'date_text':f'2026年1月{source["id"]}日','actors':'甲','description':'签约','topic':'签约'},sources) for source in sources]
-        self.assertEqual(issues(events)[0]['type'],'date_difference')
+        self.assertEqual(issues(events),[])  # Same actor and broad topic on different days do not prove a contradiction.
         updates=[{'id':row['id'],'status':'confirmed','note':''} for row in events]
         updates[1].update(status='excluded',note='同名事项实际为另案，复核后排除')
         reviewed=review_events(events,updates);self.assertEqual(issues(reviewed),[])
         with self.assertRaises(HTTPException):review_events(events,[{'id':'forged','status':'confirmed'}]*2)
+
+    def test_timeline_comparison_uses_full_documents_and_excludes_unverified_amounts(self):
+        from backend.case_timeline import grounded_event
+        sources=[{'id':'1','path':'a.txt','sha256':'h','locator':'第1段','chunk_index':0,'text':'甲于2025年8月19日支付20000元。'},
+                 {'id':'2','path':'a.txt','sha256':'h','locator':'第2段','chunk_index':1,'text':'甲于2025年8月20日支付30000元。'},
+                 {'id':'3','path':'b.txt','sha256':'h','locator':'第1段','chunk_index':0,'text':'乙称甲于2025年8月19日支付20000元。'}]
+        def event(source,description,date):
+            return grounded_event({'source_id':source['id'],'quote':source['text'],'date_text':date,'actors':'甲','description':description,'topic':'付款'},sources)
+        rows=[event(sources[0],'甲支付20000元','2025年8月19日'),event(sources[1],'甲支付30000元','2025年8月20日'),event(sources[2],'甲支付20000元','2025年8月19日')]
+        fabricated={**rows[0],'id':'fabricated','description':'甲支付10元'}
+        job={'timeline_events':rows+[fabricated],'timeline_coverage':{},'model':'fixture'}
+        requests=[]
+        async def compare(model,messages):
+            requests.append(json.loads(messages[-1]['content']))
+            return json.dumps({'conflicts':[]}), '', model
+        with patch.object(self.service,'event'),patch.object(self.service,'call_ai',side_effect=compare):
+            asyncio.run(self.service.compare_timeline_sources(self.root,job,sources))
+        self.assertNotIn('fabricated',[row['id'] for row in requests[0]['events']])
+        document=next(item for item in requests[0]['documents'] if item['path']=='a.txt')
+        self.assertIn('支付20000元',document['text'])
+        self.assertIn('支付30000元',document['text'])
+        self.assertEqual(job['timeline_conflicts'],[])
 
     def test_timeline_failure_resumes_exact_extraction_checkpoints(self):
         original=self.service.call_ai;calls={'n':0}
