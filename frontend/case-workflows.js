@@ -24,11 +24,15 @@
     parent.postMessage({type:'apex:case-hub-knowledge',version:1,caseId:state.caseId,caseTitle:state.caseTitle}, location.origin);
   });
   const contextBar=document.querySelector('.case-bar');
-  new ResizeObserver(()=>{
+  function updateContextOffset(){
     const style=getComputedStyle(contextBar);
     const offset=style.position==='sticky'?Math.ceil(contextBar.getBoundingClientRect().height+(parseFloat(style.top)||0)+16):16;
     document.documentElement.style.setProperty('--workflow-context-offset',`${offset}px`);
-  }).observe(contextBar);
+    requestAnimationFrame(syncFusedTimeline);
+  }
+  function syncFusedTimeline(){const active=state.kind==='timeline';const bar=contextBar.getBoundingClientRect();const legend=active?document.querySelector('#detail .timeline-legend'):null;const rect=legend?.getBoundingClientRect();document.body.classList.toggle('timeline-scrolled',active&&bar.top<=.5);document.body.classList.toggle('timeline-fused',!!(rect&&bar.top<=.5&&rect.top<=bar.bottom+1&&rect.bottom>bar.bottom));}
+  new ResizeObserver(updateContextOffset).observe(contextBar);
+  let fusionFrame=0;addEventListener('scroll',()=>{if(fusionFrame)return;fusionFrame=requestAnimationFrame(()=>{fusionFrame=0;syncFusedTimeline();});},{passive:true});
   function captureEntries() {
     $('entries').querySelectorAll('[data-entry]').forEach(el=>{const entry=state.entries[Number(el.dataset.entry)];if(!entry)return;
       el.querySelectorAll('[data-field]').forEach(input=>entry[input.dataset.field]=input.value);
@@ -55,7 +59,7 @@
     captureEntries(); state.kind = kind;state.sequence++;
     const materialMode=kind==='material_analysis';
     const consent=$('ocrConsent').closest('label');consent.hidden=kind==='timeline';if(kind==='timeline')updateTimelineVision();
-    document.body.classList.toggle('timeline-mode',kind==='timeline');$('refresh').textContent=kind==='timeline'?'导出':'刷新记录';$('timelineTopMenu').hidden=kind!=='timeline';
+    document.body.classList.toggle('timeline-mode',kind==='timeline');$('refresh').textContent=kind==='timeline'?'筛选':'刷新记录';requestAnimationFrame(updateContextOffset);$('timelineTopMenu').hidden=kind!=='timeline';
     $('timelineDiscovery').hidden=true;
     if(state.job && state.job.kind!==kind) $('detailPanel').hidden=true;
     document.body.classList.toggle('material-mode',materialMode);
@@ -242,7 +246,7 @@
     catch(error){if(id===state.caseId)toast(error.message);}
     schedule();
   }
-  $('refresh').onclick=()=>{if(state.kind==='timeline'&&state.job?.kind==='timeline'&&state.job.status==='completed'){$('timelineExportOpen')?.click();return;}window.StellaCaseKnowledge.invalidate();refresh();};$('topTimelineExport').onclick=()=>$('timelineExportOpen')?.click();$('topTimelineAdd').onclick=()=>$('addTimelineMaterials')?.click();$('topTimelineRefresh').onclick=()=>{window.StellaCaseKnowledge.invalidate();refresh();};$('timelineTopMenu').addEventListener('click',event=>{if(event.target.closest('#timelineTopFilters'))handleTimeline(event);});
+  $('refresh').onclick=()=>{if(state.kind==='timeline'&&state.job?.kind==='timeline'&&state.job.status==='completed'){const filter=document.querySelector('#timelineTopFilters .timeline-tools');if(filter){filter.open=!filter.open;$('refresh').setAttribute('aria-expanded',String(filter.open));}return;}window.StellaCaseKnowledge.invalidate();refresh();};document.addEventListener('pointerdown',event=>{if(!event.target.closest('.case-actions')){const filter=document.querySelector('#timelineTopFilters .timeline-tools');if(filter?.open){filter.open=false;$('refresh').setAttribute('aria-expanded','false');}if(contextBar.contains(document.activeElement))document.activeElement.blur();}},{capture:true});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('preview').hidden){const filter=document.querySelector('#timelineTopFilters .timeline-tools');if(filter?.open){filter.open=false;$('refresh').setAttribute('aria-expanded','false');$('refresh').focus();}}});$('topTimelineExport').onclick=()=>$('timelineExportOpen')?.click();$('topTimelineAdd').onclick=()=>$('addTimelineMaterials')?.click();$('topTimelineRefresh').onclick=()=>{window.StellaCaseKnowledge.invalidate();refresh();};$('timelineTopFilters').addEventListener('click',event=>handleTimeline(event));
   function schedule(){clearTimeout(state.timer);if(state.kind!=='material_analysis'&&window.ApexLifecycle?.active!==false&&document.visibilityState==='visible'&&state.tasks.some(row=>['running','queued'].includes(row.status)))state.timer=setTimeout(refresh,1500);}
   window.ApexLifecycle?.onChange(active=>{ $('filePicker').contentWindow?.postMessage({type:'apex:workflow-visibility',version:1,caseId:state.caseId,active},location.origin); if(active)refresh();else clearTimeout(state.timer);});
   addEventListener('beforeunload',()=>clearTimeout(state.timer));
@@ -275,7 +279,7 @@
       if(job.status==='completed')window.StellaCaseKnowledge.hydrate(knowledgeContext());
     }
     const image=$('detail').querySelector('.export-paper img');if(image)image.onerror=()=>{image.hidden=true;image.nextElementSibling.hidden=false;};
-    if(job.kind==='timeline'&&job.status==='completed')requestAnimationFrame(()=>window.dispatchEvent(new Event('scroll')));
+    if(job.kind==='timeline'&&job.status==='completed')requestAnimationFrame(()=>{syncFusedTimeline();window.dispatchEvent(new Event('scroll'));});
     if(state.busy)$('detail').querySelectorAll('input,textarea,button').forEach(el=>{el.dataset.busyDisabled=String(el.disabled);el.disabled=true;});
   }
   let timelineReviewOpen=false,timelineAnimationUntil=performance.now()+1200;

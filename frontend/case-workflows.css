@@ -252,7 +252,7 @@ summary:focus-visible{outline:2px solid var(--apex-accent);outline-offset:3px}
 @media(prefers-reduced-motion:reduce){.timeline-animate .timeline-pair{animation:none}}
 
 .case-bar{z-index:50}
-.case-actions:has(.timeline-tools[open]) .case-action-menu:not([hidden]){display:grid}
+.case-actions:has(.timeline-tools[open]) .case-action-menu:not([hidden]){display:none}
 
 .timeline-comparison{margin-top:10px;padding:11px 14px;border:1px solid color-mix(in srgb,var(--apex-accent) 28%,var(--apex-border-subtle));border-radius:var(--apex-radius-md);background:var(--apex-surface-solid);font-size:12px;line-height:1.6}.timeline-comparison>summary{cursor:pointer;color:var(--apex-accent);font-weight:650}.timeline-comparison-group>p,.timeline-comparison-note{color:var(--apex-text-secondary);margin:10px 0}.timeline-comparison-peer{display:grid;gap:5px;padding:10px 12px;margin-top:8px;border-radius:var(--apex-radius-md);background:var(--apex-surface-muted);overflow-wrap:anywhere}.timeline-comparison-peer small{color:var(--apex-text-secondary)}.timeline-comparison-peer .button{justify-self:start}.timeline-comparison-note{margin-bottom:0}
 
@@ -260,3 +260,23 @@ summary:focus-visible{outline:2px solid var(--apex-accent);outline-offset:3px}
 .timeline-mode .timeline-legend,.timeline-mode .timeline-rail{top:calc(var(--workflow-context-offset, 100px) - 17px)}
 .timeline-animate .timeline-pair{animation-duration:.65s;animation-delay:calc(var(--entry-index,0) * 100ms)}
 @media(max-width:600px){.timeline-mode .timeline-rail{top:auto}}
+
+/* A single sticky surface joins the case navigation and party headings. */
+.timeline-mode .case-bar{top:0}
+.timeline-scrolled .case-bar{border-top-left-radius:0;border-top-right-radius:0;background:var(--apex-surface-solid)}
+.case-fused-legend{display:none}
+.timeline-fused .case-bar{border-bottom-left-radius:0;border-bottom-right-radius:0;box-shadow:none}
+.timeline-fused .case-fused-legend{display:grid;position:absolute;top:calc(100% - 1px);left:-1px;right:-1px;grid-template-columns:194px 1fr 1fr;align-items:center;min-height:54px;padding:10px 12px;background:var(--apex-surface-solid);border:1px solid var(--apex-border-subtle);border-top:1px solid var(--apex-border-subtle);border-radius:0 0 var(--apex-radius-xl) var(--apex-radius-xl);box-shadow:var(--apex-shadow-sm);color:var(--apex-accent);font-size:17px;font-weight:700;text-align:center;animation:fused-header-in .18s ease both}
+.timeline-fused .timeline-legend{opacity:0;pointer-events:none}
+@keyframes fused-header-in{from{opacity:.75}to{opacity:1}}
+@media(max-width:850px){.timeline-fused .case-fused-legend{grid-template-columns:127px 1fr 1fr;font-size:14px}}
+@media(max-width:600px){.timeline-fused .case-fused-legend{grid-template-columns:0 1fr 1fr}}
+@media(prefers-reduced-motion:reduce){.timeline-fused .case-fused-legend{animation:none}}
+
+/* Filter is its own anchored popover; the hover menu closes while it is open. */
+#timelineTopFilters{position:absolute;right:0;top:calc(100% + 6px);z-index:65}
+#timelineTopFilters .timeline-tools>summary{display:none}
+#timelineTopFilters .timeline-tools-panel{position:absolute;top:0;right:0;max-height:calc(100vh - var(--workflow-context-offset,100px) - 12px);overflow:auto}
+.timeline-fused .timeline-rail{top:calc(var(--workflow-context-offset,100px) + 37px);transition:top .18s ease}
+@media(max-width:600px){.timeline-fused .timeline-rail{top:auto}}
+@media(prefers-reduced-motion:reduce){.timeline-fused .timeline-rail{transition:none}}

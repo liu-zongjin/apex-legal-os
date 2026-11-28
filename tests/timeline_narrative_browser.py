@@ -33,6 +33,21 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    page.wait_for_function("document.querySelector('.timeline-mini [data-mini-target]:last-child').getAttribute('aria-current')==='true'")
    nav=page.locator('.case-bar').bounding_box();legend=page.locator('.timeline-legend').bounding_box()
    assert abs(legend['y']-(nav['y']+nav['height'])) <= 2, (nav,legend)
+   page.wait_for_function("document.body.classList.contains('timeline-fused')")
+   fused=page.locator('.case-fused-legend').bounding_box()
+   assert abs(nav['y']) <= 1 and abs(fused['y']-(nav['y']+nav['height']))<=2, (nav,fused)
+   assert abs(fused['x']-nav['x'])<=2 and abs(fused['width']-nav['width'])<=2
+   assert page.locator('#refresh').inner_text()=='筛选'
+   page.locator('#refresh').click()
+   assert page.locator('.timeline-tools-panel').is_visible()
+   assert page.locator('#timelineTopMenu').is_hidden()
+   popup=page.locator('.timeline-tools-panel').bounding_box()
+   assert abs((popup['x']+popup['width'])-(nav['x']+nav['width']-17))<30
+   assert popup['y'] >= nav['y']+nav['height']-12
+   page.locator('.timeline-rail h2').click()
+   assert page.locator('.timeline-tools').get_attribute('open') is None
+   page.evaluate('window.scrollTo(0,0)')
+   page.wait_for_function("!document.body.classList.contains('timeline-fused')")
    assert '到日' not in page.locator('.timeline-list').inner_text()
    page.locator('.timeline-workbench').evaluate("el => el.classList.add('timeline-animate')")
    assert page.locator('.timeline-pair').first.evaluate("el => parseFloat(getComputedStyle(el).animationDuration)") >= .6
@@ -41,9 +56,9 @@ with tempfile.TemporaryDirectory(prefix='timeline-layout-') as d:
    page.screenshot(path=str(p/'timeline-desktop.png'))
    page.locator('[data-time-event]').first.click();assert page.locator('.timeline-editor').is_visible()
    page.locator('[data-time-source]').first.click();page.frame_locator('#sourcePreview').locator('#page').wait_for();page.keyboard.press('Escape')
-   page.locator('#closeTimelineReview').click();page.locator('.case-actions').hover();page.locator('.timeline-tools > summary').click();assert page.locator('[data-time-category]').first.is_visible()
+   page.locator('#closeTimelineReview').click();page.locator('#refresh').click();assert page.locator('[data-time-category]').first.is_visible()
    page.locator('[data-time-party="原告方"]').click();assert page.locator('.timeline-entry').count()==1
-   page.set_viewport_size({'width':390,'height':844});page.locator('.case-actions').hover();page.locator('.timeline-tools > summary').click() if page.locator('.timeline-tools').get_attribute('open') is not None else None
+   page.set_viewport_size({'width':390,'height':844});page.locator('#refresh').click() if page.locator('.timeline-tools').get_attribute('open') is not None else None
    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
    page.screenshot(path=str(p/'timeline-mobile.png'))
    page.set_viewport_size({'width':1440,'height':500})
