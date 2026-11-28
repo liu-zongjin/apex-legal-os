@@ -48,6 +48,11 @@ partial coverage and does not claim verified conflict. Incremental jobs snapshot
 old and new inputs, copy the verified parsed source cache, retain reviewed and
 excluded events, extract only new materials and enforce the parent revision.
 Default mode is timeline except the existing explicit material-task entry.
+The timeline-auto response also provides role-to-side mappings derived from
+case party groups; roles shared by opposing groups stay unclassified. The
+chronology uses a continuous page axis, compact filter/export disclosures and
+a review drawer. Unknown sources are explicitly labelled, never inferred as
+the client's own side.
 
 The AI file picker accepts an entire bound case folder as a case-scoped root
 selection, excluding Stella's generated-output folder to prevent recursively

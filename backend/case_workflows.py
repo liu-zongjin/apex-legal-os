@@ -1155,7 +1155,18 @@ def register_case_workflow_routes(app, get_db, frontend_dir, *, parse_file, call
         root, job, scan, created = await _run_in_thread(inspect_and_create)
         if created:
             service.launch(root, job)
-        return {'job':job, 'scan':scan, 'created':created}
+        # A procedural role is not inherently the client's side. Only assign a
+        # side when every recorded party with that role has the same group.
+        role_groups = {}
+        for party in service.parties(case_id):
+            role = str(party.get('role') or '')
+            for key in ('被告', '原告', '被上诉人', '上诉人', '被申请人', '申请人'):
+                if key in role:
+                    label = key + '方' if key in ('原告', '被告') else key
+                    role_groups.setdefault(label, set()).add('client' if party.get('party_group') == 'client' else 'other')
+                    break
+        sides = {label:next(iter(groups)) for label, groups in role_groups.items() if len(groups) == 1}
+        return {'job':job, 'scan':scan, 'created':created, 'party_sides':sides}
 
     @app.get('/api/case-workflows/cases/{case_id}/tasks/{job_id}')
     def detail(case_id: int, job_id: str):

@@ -64,6 +64,7 @@ class AutoTimelineTests(unittest.TestCase):
         self.assertEqual(len(scan['candidates']),2)
         response=self.client.post('/api/case-workflows/cases/1/timeline-auto',json={})
         self.assertEqual(response.status_code,200,response.text); self.assertTrue(response.json()['created'])
+        self.assertEqual(response.json()['party_sides'], {'原告方':'client','被告方':'other'})
         job=self.done(response.json()['job']);self.assertEqual(job['status'],'completed',job)
         self.assertEqual({row['party'] for row in job['timeline_events']},{'原告方','被告方'})
         second=self.client.post('/api/case-workflows/cases/1/timeline-auto',json={}).json()
@@ -99,6 +100,17 @@ class AutoTimelineTests(unittest.TestCase):
         result=self.client.post('/api/case-workflows/cases/1/timeline-auto',json={}).json()
         self.assertIsNone(result['job']);self.assertEqual(result['scan']['evidence'][0]['path'],'合同.txt')
         self.assertEqual(self.service.list(1)['items'],[])
+    def test_client_side_comes_from_party_group_and_ambiguous_roles_stay_unknown(self):
+        with self.service.get_db() as conn:
+            conn.execute("UPDATE case_manager_parties SET party_group=CASE WHEN role='被告' THEN 'client' ELSE 'other' END")
+            conn.commit()
+        result=self.client.post('/api/case-workflows/cases/1/timeline-auto',json={}).json()
+        self.assertEqual(result['party_sides'], {'原告方':'other','被告方':'client'})
+        with self.service.get_db() as conn:
+            conn.execute("INSERT INTO case_manager_parties VALUES(1,'丙','原告','client',2,3)")
+            conn.commit()
+        result=self.client.post('/api/case-workflows/cases/1/timeline-auto',json={}).json()
+        self.assertNotIn('原告方', result['party_sides'])
     def test_discovery_checks_headings_and_skips_large_pdf(self):
         generic=Document();generic.add_paragraph('民 事 起 诉 状');generic.save(self.root/'文书一.docx')
         exhibit=Document();exhibit.add_paragraph('这是一份证据材料，收到民事起诉状之后对方通知我。');exhibit.save(self.root/'材料.docx')

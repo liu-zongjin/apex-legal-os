@@ -228,26 +228,33 @@ def run(output):
                 page.locator('#chooseTimelineEvidence').click()
                 page.locator('#draft').fill('')
                 page.locator('#submit').click()
-                page.locator('#saveTimeline').wait_for(timeout=20000)
+                page.locator('#saveTimeline').wait_for(state='attached',timeout=20000)
+                page.locator('.timeline-tools > summary').click()
+                page.locator('.timeline-delivery > summary').click()
                 assert page.locator('[data-time-event]').count()==2
                 assert page.locator('.timeline-entry.has-conflict').count()==2
                 page.locator('[data-time-category="履行付款"]').click()
                 assert page.locator('[data-time-event]').count()==1
                 page.locator('[data-time-category="*"]').click()
                 assert page.locator('[data-time-event]').count()==2
-                assert page.locator('.timeline-event-quote').first.inner_text()
+                assert page.locator('.timeline-event-quote').first.text_content()
+                page.locator('.timeline-tools > summary').click()
+                page.locator('[data-time-event]').first.click()
                 page.locator('[data-time-status="confirmed"]').click()
-                page.locator('#saveTimeline').click()
+                page.locator('#saveTimelineReview').click()
                 page.get_by_text('当前成果版本：2',exact=False).wait_for()
                 page.locator('[data-time-field="date_text"]').fill('2026年1月2日')
                 page.locator('[data-time-field="review_note"]').fill('匿名复核：日期修订测试')
-                page.locator('#saveTimeline').click()
+                page.locator('#saveTimelineReview').click()
                 page.get_by_text('当前成果版本：3',exact=False).wait_for()
-                page.locator('[data-time-source]').first.click()
+                page.locator('.timeline-editor [data-time-source]').first.click()
                 page.frame_locator('#sourcePreview').locator('#page').wait_for()
                 page.keyboard.press('Escape')
                 page.locator('[data-time-field="description"]').fill('未保存修改')
+                page.locator('#closeTimelineReview').click()
+                page.locator('.timeline-tools > summary').click()
                 page.locator('#restoreTimeline').click()
+                page.locator('.timeline-tools > summary').click()
                 page.wait_for_function("document.querySelector('[data-time-field=description]').value !== '未保存修改'")
                 page.locator('details:has(#loadTimeFragments) > summary').click()
                 page.locator('#loadTimeFragments').click()
@@ -272,7 +279,7 @@ def run(output):
                 assert 'include_evidence=false' in image.get_attribute('src')
                 page.locator('#saveTimeline').click()
                 page.get_by_text('当前成果版本：5',exact=False).wait_for()
-                page.reload();page.locator('#tasks [data-job]').first.wait_for();page.locator('#tasks [data-job]').first.click();page.locator('#saveTimeline').wait_for()
+                page.reload();page.locator('#tasks [data-job]').first.wait_for();page.locator('#tasks [data-job]').first.click();page.locator('#saveTimeline').wait_for(state='attached');page.locator('.timeline-delivery > summary').click()
                 assert page.locator('[data-export-style="cards"]').get_attribute('aria-pressed')=='true'
                 assert not page.locator('#timelineEvidence').is_checked()
                 page.locator('[data-export-style="table"]').click()
@@ -287,7 +294,7 @@ def run(output):
                 page.set_viewport_size({'width':1440,'height':900})
                 page.locator('#detailPanel').scroll_into_view_if_needed()
                 page.evaluate('window.scrollTo(0,0)');page.screenshot(path=str(output/'时间轴-1440-light.png'),full_page=True)
-                downloads=page.locator('#detail > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent}))')
+                downloads=page.locator('#detail .timeline-delivery > .downloads a').evaluate_all('(links)=>links.map(link=>({url:link.getAttribute("href"),name:link.textContent}))')
                 assert len(downloads)==6
                 for download in downloads:
                     response=page.request.get(base+download['url']);assert response.ok
@@ -301,7 +308,7 @@ def run(output):
                 page.reload()
                 page.locator('#tasks [data-job]').first.wait_for()
                 page.locator('#tasks [data-job]').first.click()
-                page.locator('#saveTimeline').wait_for()
+                page.locator('#saveTimeline').wait_for(state='attached');page.locator('.timeline-delivery > summary').click()
                 assert page.locator('[data-time-event]').count()==3
                 page.locator('#addTimelineMaterials').click()
                 frame.locator('.file-row').filter(has_text='03_草稿.txt').click()
@@ -313,6 +320,7 @@ def run(output):
                 page.wait_for_function("document.querySelectorAll('[data-time-event]').length===4")
                 page.locator('[data-time-select]').first.check()
                 page.locator('[data-time-select]').nth(1).check()
+                page.locator('.timeline-tools > summary').click()
                 page.locator('#removeTimelineSelected').click()
                 page.wait_for_function("document.querySelectorAll('[data-time-event]').length===2")
                 page.locator('[data-time-filter="excluded"]').click()
